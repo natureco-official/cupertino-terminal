@@ -6,6 +6,8 @@ An open-source terminal application that brings the look and feel of **macOS Ter
 
 Built with Electron + xterm.js + node-pty. No compilation needed on install: the PTY layer uses prebuilt binaries, so you do **not** need Python or Visual Studio Build Tools.
 
+![Cupertino Terminal running zsh in WSL with the Pro profile](docs/screenshot.png)
+
 ## Features
 
 - 🚦 macOS-style window chrome: traffic lights, centered `process — cols×rows` title, separate tab bar (appears with 2+ tabs)

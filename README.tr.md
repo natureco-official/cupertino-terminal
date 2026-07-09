@@ -6,6 +6,8 @@
 
 Electron + xterm.js + node-pty ile geliştirildi. Kurulumda derleme gerekmez: PTY katmanı hazır (prebuilt) ikili dosyalar kullanır, yani **Python veya Visual Studio Build Tools gerekmez**.
 
+![Cupertino Terminal — WSL'de zsh, Pro profiliyle](docs/screenshot.png)
+
 ## Özellikler
 
 - 🚦 macOS tarzı pencere: traffic-light düğmeler, ortalanmış `süreç — sütun×satır` başlığı, ayrı sekme çubuğu (2+ sekmede görünür)
