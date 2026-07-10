@@ -1,11 +1,8 @@
 {
   "name": "cupertino-terminal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
-  "bin": {
-    "cupertino-terminal": "launch.js"
-  },
   "author": "",
   "license": "MIT",
   "keywords": [
@@ -24,16 +21,8 @@
     "start": "electron .",
     "dist": "electron-builder"
   },
-  "files": [
-    "src/",
-    "launch.js",
-    "README.md",
-    "README.tr.md",
-    "LICENSE"
-  ],
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
-    "electron": "^31.0.0",
     "electron-store": "^8.2.0",
     "node-datachannel": "^0.12.0",
     "xterm": "^5.3.0",
@@ -42,6 +31,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",
+    "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },
   "build": {
@@ -62,6 +52,10 @@
     "win": {
       "target": "nsis",
       "icon": "src/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
     }
   }
 }
