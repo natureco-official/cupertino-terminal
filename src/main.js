@@ -228,6 +228,7 @@ ipcMain.on('settings:set', (event, settings) => {
   } else {
     store.delete('shell');
   }
+  applyTurnFromSettings(); // ZeroLink TURN yapılandırmasını güncelle
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -235,9 +236,19 @@ ipcMain.on('settings:set', (event, settings) => {
 // ════════════════════════════════════════════════════════════════════════════
 const { ZeroLinkHost }   = require('./zerolink-host');
 const { ZeroLinkClient } = require('./zerolink-client');
+const { setTurnConfig }  = require('./zerolink-peer');
 
 let zlHost   = null; // aktif host oturumu
 let zlClient = null; // aktif client oturumu
+
+// Opsiyonel TURN relay (simetrik NAT / farklı ağlar için). Ayarlardan okunur:
+//   settings.zlTurn = { url: 'turn:host:3478', username, credential }
+// İçerik TURN üzerinden geçse bile ZeroLink E2E şifreli → operatör içeriği göremez.
+function applyTurnFromSettings() {
+  const s = store.get('settings', {}) || {};
+  setTurnConfig(s.zlTurn && s.zlTurn.url ? s.zlTurn : null);
+}
+applyTurnFromSettings();
 
 // SSH benzeri: bağlanan istemciye TAZE bir kabuk aç (host kendi ekranını paylaşmaz).
 // node-pty örneğini ZeroLinkHost'un beklediği ptyLike arayüzüne uyarlıyoruz.

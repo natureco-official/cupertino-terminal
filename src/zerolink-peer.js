@@ -40,8 +40,35 @@ const STUN_SERVERS = [
   { host: 'stun.cloudflare.com', port: 3478 },
 ];
 
-// ICE için aynı liste (node-datachannel formatı)
-const ICE_SERVERS = STUN_SERVERS.map(s => `stun:${s.host}:${s.port}`);
+// Opsiyonel TURN sunucusu (simetrik NAT / kısıtlı ağlar için relay).
+// İçerik TURN üzerinden geçse bile ZeroLink katmanı E2E şifreli olduğundan TURN
+// operatörü içeriği GÖREMEZ (yalnızca şifreli baytları relay'ler).
+// Ayar: main.js settings'ten setTurnConfig() ile ya da ortam değişkeninden:
+//   ZEROLINK_TURN_URL=turn:host:3478  ZEROLINK_TURN_USER=...  ZEROLINK_TURN_CRED=...
+let _turnConfig = null;
+function setTurnConfig(cfg) {
+  // cfg: { url, username, credential } | null
+  _turnConfig = (cfg && cfg.url) ? cfg : null;
+}
+function _envTurn() {
+  const url = process.env.ZEROLINK_TURN_URL;
+  if (!url) return null;
+  return { url, username: process.env.ZEROLINK_TURN_USER || '', credential: process.env.ZEROLINK_TURN_CRED || '' };
+}
+
+// node-datachannel iceServers listesini kur (STUN + varsa TURN)
+function buildIceServers() {
+  const list = STUN_SERVERS.map(s => `stun:${s.host}:${s.port}`);
+  const turn = _turnConfig || _envTurn();
+  if (turn) {
+    // node-datachannel string biçimi: turn:user:pass@host:port
+    const u = turn.url.replace(/^turns?:/i, '');
+    const scheme = /^turns:/i.test(turn.url) ? 'turns' : 'turn';
+    if (turn.username) list.push(`${scheme}:${encodeURIComponent(turn.username)}:${encodeURIComponent(turn.credential)}@${u}`);
+    else list.push(`${scheme}:${u}`);
+  }
+  return list;
+}
 
 // UDP rendezvous sinyalleşme portu (host tarafı)
 const SIGNAL_PORT = 47221;
@@ -315,7 +342,7 @@ class ZeroLinkPeer extends EventEmitter {
 
   _initPeerConnection() {
     this._pc = new nodeDataChannel.PeerConnection('ZeroLink', {
-      iceServers: ICE_SERVERS,
+      iceServers: buildIceServers(),
     });
 
     this._pc.onStateChange((state) => {
@@ -384,4 +411,4 @@ class ZeroLinkPeer extends EventEmitter {
   }
 }
 
-module.exports = { ZeroLinkPeer, discoverPublicAddress, getLocalAddresses, SIGNAL_PORT };
+module.exports = { ZeroLinkPeer, discoverPublicAddress, getLocalAddresses, setTurnConfig, SIGNAL_PORT };
