@@ -968,3 +968,24 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;
 }
 .zl-fwd-item .zl-fwd-kill:hover { color: #ff6961; }
+
+/* ── NatureCo marka imzası (ayarlar footer) ── */
+.settings-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted, #8A97A3);
+}
+.settings-footer .nc-sig strong { color: #34D399; font-weight: 600; }
+.settings-footer .nc-link {
+  color: #22D3EE;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.settings-footer .nc-link:hover { text-decoration: underline; }

@@ -77,3 +77,7 @@ Agent script'leri zaten her zaman **en güncel** sürümü çeker.
 ## Notlar
 - İmzasız derlemeler (kod imzalama sertifikası yok) → ilk açılışta işletim sistemi uyarır; yukarıdaki adımlar bunu geçer.
 - macOS `.dmg` şu an yalnız **Apple Silicon (arm64)**. Intel Mac için x64 sürüm gerekirse eklenebilir.
+
+---
+
+<sub>**NatureCo** ekosisteminin parçası — [natureco.me](https://natureco.me) · Part of the NatureCo ecosystem</sub>

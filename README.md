@@ -228,3 +228,7 @@ environment variables. Content stays E2E encrypted even when relayed.
 MIT — see [LICENSE](LICENSE). Bundles the [JetBrains Mono](https://www.jetbrains.com/lp/mono/) typeface under the [SIL Open Font License 1.1](src/fonts/OFL.txt).
 
 Cupertino Terminal is an independent open-source project. It is not affiliated with or endorsed by Apple Inc. macOS and Terminal.app are trademarks of Apple Inc.
+
+---
+
+<sub>Part of the **NatureCo** ecosystem — [natureco.me](https://natureco.me) · NatureCo ekosisteminin parçası</sub>

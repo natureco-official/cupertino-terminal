@@ -228,3 +228,7 @@ ortam değişkenlerini ayarlayın. Relay edilse bile içerik uçtan uca şifreli
 MIT — bkz. [LICENSE](LICENSE). [JetBrains Mono](https://www.jetbrains.com/lp/mono/) yazı tipini [SIL Open Font License 1.1](src/fonts/OFL.txt) ile içerir.
 
 Cupertino Terminal bağımsız bir açık kaynak projesidir; Apple Inc. ile bir bağı yoktur ve Apple tarafından onaylanmamıştır. macOS ve Terminal.app, Apple Inc. şirketinin ticari markalarıdır.
+
+---
+
+<sub>**NatureCo** ekosisteminin parçası — [natureco.me](https://natureco.me) · Part of the NatureCo ecosystem</sub>

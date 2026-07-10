@@ -1303,6 +1303,15 @@ document.getElementById('zl-back-btn').addEventListener('click', () => {
   zlResetToModeSelect();
 });
 
+// NatureCo imzası → natureco.me'yi sistem tarayıcısında aç
+(() => {
+  const nc = document.getElementById('nc-link');
+  if (!nc) return;
+  const open = (e) => { e.preventDefault(); window.termAPI.openExternal('https://natureco.me'); };
+  nc.addEventListener('click', open);
+  nc.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+})();
+
 // Gomulu fontu xterm ilk olcumden ONCE yukle (yoksa glyph metrigi kayar), sonra ilk sekme.
 async function boot() {
   try {

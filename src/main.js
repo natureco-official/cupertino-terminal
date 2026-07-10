@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, screen, clipboard, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, screen, clipboard, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const Store = require('electron-store');
@@ -246,6 +246,11 @@ ipcMain.on('clipboard:write', (event, text) => {
   if (typeof text === 'string' && text.length) clipboard.writeText(text);
 });
 ipcMain.handle('clipboard:read', () => clipboard.readText());
+
+// ---- IPC: dış bağlantıyı sistem tarayıcısında aç (NatureCo imzası / linkler) ----
+ipcMain.on('shell:openExternal', (event, url) => {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
+});
 
 // ---- IPC: terminal sekmesi olustur ----
 ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows }) => {

@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('termAPI', {
   clipboardWrite: (text) => ipcRenderer.send('clipboard:write', text),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
 
+  // Dis baglanti (NatureCo imzasi / natureco.me) — sistem tarayicisinda ac
+  openExternal: (url) => ipcRenderer.send('shell:openExternal', url),
+
   // Pencere odak/blur — traffic-light'lari griye cevirmek icin (macOS davranisi)
   onFocusChange: (callback) => {
     const listener = (event, focused) => callback(focused);
