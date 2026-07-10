@@ -1,6 +1,6 @@
 {
   "name": "cupertino-terminal",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
   "author": "",
@@ -37,6 +37,7 @@
   "build": {
     "appId": "com.cupertinoterminal.app",
     "productName": "Cupertino Terminal",
+    "npmRebuild": false,
     "asarUnpack": [
       "node_modules/@homebridge/node-pty-prebuilt-multiarch/**",
       "node_modules/node-datachannel/**"
