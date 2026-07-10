@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, screen, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, screen, clipboard, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const Store = require('electron-store');
@@ -228,4 +228,134 @@ ipcMain.on('settings:set', (event, settings) => {
   } else {
     store.delete('shell');
   }
+  applyTurnFromSettings(); // ZeroLink TURN yapılandırmasını güncelle
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// ZeroLink — Serverless P2P Encrypted Terminal Protocol
+// ════════════════════════════════════════════════════════════════════════════
+const { ZeroLinkHost }   = require('./zerolink-host');
+const { ZeroLinkClient } = require('./zerolink-client');
+const { setTurnConfig }  = require('./zerolink-peer');
+
+let zlHost   = null; // aktif host oturumu
+let zlClient = null; // aktif client oturumu
+
+// Opsiyonel TURN relay (simetrik NAT / farklı ağlar için). Ayarlardan okunur:
+//   settings.zlTurn = { url: 'turn:host:3478', username, credential }
+// İçerik TURN üzerinden geçse bile ZeroLink E2E şifreli → operatör içeriği göremez.
+function applyTurnFromSettings() {
+  const s = store.get('settings', {}) || {};
+  setTurnConfig(s.zlTurn && s.zlTurn.url ? s.zlTurn : null);
+}
+applyTurnFromSettings();
+
+// SSH benzeri: bağlanan istemciye TAZE bir kabuk aç (host kendi ekranını paylaşmaz).
+// node-pty örneğini ZeroLinkHost'un beklediği ptyLike arayüzüne uyarlıyoruz.
+function makeSessionSpawner() {
+  return ({ cols, rows }) => {
+    if (!pty) throw new Error('node-pty mevcut degil');
+    const profile = getDefaultShell();
+    const proc = pty.spawn(profile.command, profile.args, {
+      name: 'xterm-256color',
+      cols: cols || 100,
+      rows: rows || 30,
+      cwd: os.homedir(),
+      env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: process.env.LANG || 'en_US.UTF-8' },
+    });
+    return {
+      pid: proc.pid,
+      onData: (cb) => proc.onData(cb),   // {dispose} döner
+      onExit: (cb) => proc.onExit(cb),
+      write:  (d)  => proc.write(d),
+      resize: (c, r) => { try { proc.resize(c, r); } catch (_) {} },
+      kill:   () => { try { proc.kill(); } catch (_) {} },
+    };
+  };
+}
+
+// ── HOST tarafı IPC ──────────────────────────────────────────────────────────
+ipcMain.handle('zl:host:start', async () => {
+  if (zlHost) { zlHost.stop(); zlHost = null; }
+
+  zlHost = new ZeroLinkHost({ spawnSession: makeSessionSpawner() });
+
+  zlHost.on('codeReady',    (code)           => mainWindow?.webContents.send('zl:host:code', { code }));
+  zlHost.on('codeTimer',    (secondsLeft)    => mainWindow?.webContents.send('zl:host:timer', { secondsLeft }));
+  zlHost.on('codeExpired',  ()               => { mainWindow?.webContents.send('zl:host:expired'); zlHost = null; });
+  zlHost.on('clientConnected', ({ addr })    => mainWindow?.webContents.send('zl:host:connected', { addr }));
+  zlHost.on('sessionStarted', ({ pid })      => mainWindow?.webContents.send('zl:host:session', { pid }));
+  zlHost.on('fileReceived', (info)           => mainWindow?.webContents.send('zl:host:file', info));
+  zlHost.on('disconnected', ()               => { mainWindow?.webContents.send('zl:host:disconnected'); zlHost = null; });
+  zlHost.on('error',        (err)            => mainWindow?.webContents.send('zl:error', { message: err.message }));
+
+  const code = await zlHost.start();
+  return { code };
+});
+
+ipcMain.on('zl:host:stop', () => {
+  zlHost?.stop();
+  zlHost = null;
+});
+
+// ── CLIENT tarafı IPC ────────────────────────────────────────────────────────
+ipcMain.handle('zl:client:connect', async (event, { code, tabId }) => {
+  if (zlClient) { zlClient.stop(); zlClient = null; }
+
+  zlClient = new ZeroLinkClient();
+
+  // Uzak oturum çıktısını istemci sekmesine yaz
+  zlClient.on('data', (buf) => mainWindow?.webContents.send(`pty:data:${tabId}`, buf.toString('utf8')));
+  zlClient.on('connected',    () => mainWindow?.webContents.send('zl:client:connected'));
+  zlClient.on('remoteExit',   (code) => mainWindow?.webContents.send('zl:client:remote-exit', { code }));
+  zlClient.on('fileProgress', (info) => mainWindow?.webContents.send('zl:client:file-progress', info));
+  zlClient.on('fileDone',     (info) => mainWindow?.webContents.send('zl:client:file-done', info));
+  zlClient.on('fileError',    (info) => mainWindow?.webContents.send('zl:client:file-error', info));
+  zlClient.on('forwardOpen',  (info) => mainWindow?.webContents.send('zl:client:forward-open', info));
+  zlClient.on('forwardError', (info) => mainWindow?.webContents.send('zl:client:forward-error', info));
+  zlClient.on('disconnected', () => { mainWindow?.webContents.send('zl:client:disconnected'); zlClient = null; });
+  zlClient.on('error',        (err) => { mainWindow?.webContents.send('zl:error', { message: err.message }); zlClient = null; });
+
+  await zlClient.connect(code);
+  return { ok: true };
+});
+
+// Kullanıcı klavye girişi → uzak PTY (DATA çerçevesi)
+ipcMain.on('zl:client:send', (event, { data }) => {
+  zlClient?.sendInput(data);
+});
+
+// İstemci terminal boyutu → uzak PTY (RESIZE) — SSH SIGWINCH muadili
+ipcMain.on('zl:client:resize', (event, { cols, rows }) => {
+  zlClient?.sendResize(cols, rows);
+});
+
+// Dosya gönder (push): sistem dosya seçici → uzak host'a
+ipcMain.handle('zl:client:push', async () => {
+  if (!zlClient) throw new Error('Bağlı değil');
+  const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], title: 'ZeroLink — Gönderilecek dosya' });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  const info = zlClient.pushFile(res.filePaths[0]);
+  return { canceled: false, name: info.name };
+});
+
+// Dosya indir (pull): uzak yol → ~/ZeroLink-Downloads
+ipcMain.handle('zl:client:pull', (event, { remotePath }) => {
+  if (!zlClient) throw new Error('Bağlı değil');
+  if (!remotePath) throw new Error('Uzak dosya yolu boş');
+  return zlClient.pullFile(remotePath);
+});
+
+// Port yönlendirme ekle / kaldır (ssh -L)
+ipcMain.handle('zl:client:forward:add', (event, { localPort, remoteHost, remotePort }) => {
+  if (!zlClient) throw new Error('Bağlı değil');
+  return zlClient.addForward(parseInt(localPort, 10), remoteHost, parseInt(remotePort, 10));
+});
+ipcMain.on('zl:client:forward:remove', (event, { localPort }) => {
+  zlClient?.removeForward(parseInt(localPort, 10));
+});
+
+ipcMain.on('zl:client:disconnect', () => {
+  zlClient?.stop();
+  zlClient = null;
 });

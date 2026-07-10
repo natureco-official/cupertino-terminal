@@ -17,6 +17,7 @@
     <div id="window-title">Terminal</div>
     <button id="btn-new-tab" title="New tab (Ctrl+T) — right-click to choose shell">+</button>
     <button id="btn-settings" title="Settings (Ctrl+,)">&#9881;</button>
+    <button id="btn-zerolink" title="ZeroLink — P2P Encrypted Terminal (Ctrl+L)">⬡</button>
   </div>
 
   <!-- Tab bar: separate row like macOS; only visible with 2+ tabs -->
@@ -30,6 +31,110 @@
 
   <!-- Shell picker menu: right-click the + button (different shell per tab) -->
   <div id="shell-menu" hidden></div>
+
+  <!-- ZeroLink Panel: P2P encrypted remote terminal.
+       All captions are (re)written at runtime by applyLanguage() — English here is
+       just the fallback before the i18n dictionary loads. -->
+  <div id="zl-overlay" hidden>
+    <div id="zl-panel">
+      <div class="zl-header">
+        <span class="zl-logo">⬡</span>
+        <span id="zl-title">ZeroLink</span>
+        <button id="zl-close" title="Close (Esc)">&#215;</button>
+      </div>
+
+      <!-- Mod secimi: Host veya Client -->
+      <div id="zl-mode-select">
+        <button class="zl-mode-btn" id="zl-btn-host">
+          <span class="zl-mode-icon">📡</span>
+          <span class="zl-mode-label">Share This Terminal</span>
+          <span class="zl-mode-sub">Generate code, let the other side connect</span>
+        </button>
+        <button class="zl-mode-btn" id="zl-btn-client">
+          <span class="zl-mode-icon">🔗</span>
+          <span class="zl-mode-label">Connect</span>
+          <span class="zl-mode-sub">Open remote terminal with ZeroLink code</span>
+        </button>
+      </div>
+
+      <!-- HOST view -->
+      <div id="zl-host-view" hidden>
+        <div id="zl-host-idle">
+          <p class="zl-desc">Your terminal will be shared encrypted.<br>Code is valid <strong>5 minutes</strong>, single-use.</p>
+          <button id="zl-host-start-btn" class="zl-primary-btn">Generate Code</button>
+        </div>
+        <div id="zl-host-active" hidden>
+          <div class="zl-code-block">
+            <div class="zl-code-label">ZeroLink Code</div>
+            <div id="zl-code-display" class="zl-code-text"></div>
+            <button id="zl-code-copy" class="zl-copy-btn" title="Copy">⎘ Copy</button>
+          </div>
+          <div class="zl-timer-row">
+            <span class="zl-timer-label">Time left:</span>
+            <span id="zl-timer" class="zl-timer">5:00</span>
+          </div>
+          <div class="zl-status" id="zl-host-status">Waiting for connection…</div>
+          <button id="zl-host-stop-btn" class="zl-danger-btn">Cancel</button>
+        </div>
+        <div id="zl-host-connected" hidden>
+          <div class="zl-connected-badge">🔒 Connected — E2E Encrypted</div>
+          <div class="zl-connected-addr" id="zl-connected-addr"></div>
+          <button id="zl-host-disconnect-btn" class="zl-danger-btn">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- CLIENT view -->
+      <div id="zl-client-view" hidden>
+        <div id="zl-client-idle">
+          <p class="zl-desc">Enter the ZeroLink code and connect to the remote terminal.</p>
+          <div class="zl-input-group">
+            <input id="zl-code-input" class="zl-code-input"
+                   placeholder="XXXX-XXXX-XXXX-XXXX-…"
+                   autocomplete="off" autocorrect="off"
+                   spellcheck="false" maxlength="200" />
+          </div>
+          <button id="zl-client-connect-btn" class="zl-primary-btn">Connect</button>
+        </div>
+        <div id="zl-client-connecting" hidden>
+          <div class="zl-spinner"></div>
+          <div class="zl-status">Connecting…</div>
+        </div>
+        <div id="zl-client-connected" hidden>
+          <div class="zl-connected-badge">🔒 Connected — E2E Encrypted</div>
+          <p class="zl-desc" id="zl-client-status-text" style="margin-top:8px">Remote terminal is active in this tab.</p>
+
+          <div class="zl-tools">
+            <div class="zl-tool-row">
+              <button id="zl-push-btn" class="zl-tool-btn">⬆ <span id="zl-push-label">Send File</span></button>
+              <span id="zl-file-status" class="zl-tool-note"></span>
+            </div>
+            <div class="zl-tool-row">
+              <input id="zl-pull-input" class="zl-tool-input" placeholder="/remote/path/file" spellcheck="false" autocomplete="off" />
+              <button id="zl-pull-btn" class="zl-tool-btn">⬇ <span id="zl-pull-label">Get</span></button>
+            </div>
+
+            <div class="zl-tool-sep" id="zl-fwd-title">Port Forward (local → remote)</div>
+            <div class="zl-tool-row zl-fwd-row">
+              <input id="zl-fwd-local" class="zl-tool-input zl-fwd-port" placeholder="8080" inputmode="numeric" />
+              <span class="zl-tool-arrow">→</span>
+              <input id="zl-fwd-host" class="zl-tool-input" placeholder="127.0.0.1" spellcheck="false" autocomplete="off" />
+              <input id="zl-fwd-port" class="zl-tool-input zl-fwd-port" placeholder="80" inputmode="numeric" />
+              <button id="zl-fwd-add-btn" class="zl-tool-btn">＋</button>
+            </div>
+            <div id="zl-fwd-list" class="zl-fwd-list"></div>
+          </div>
+
+          <button id="zl-client-disconnect-btn" class="zl-danger-btn">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- Error area -->
+      <div id="zl-error" class="zl-error" hidden></div>
+
+      <!-- Back button -->
+      <button id="zl-back-btn" class="zl-back-btn" hidden>← Back</button>
+    </div>
+  </div>
 
   <!-- Settings panel (equivalent of macOS Terminal "Settings" / Cmd+,).
        All captions are (re)written at runtime by applyLanguage() — English here is
