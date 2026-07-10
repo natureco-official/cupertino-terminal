@@ -18,6 +18,7 @@ Built with Electron + xterm.js + node-pty. No compilation needed on install: the
 - 📁 Open in any folder: pass a directory as a command-line argument (used by the optional Explorer context menu)
 - ⌨️ macOS-faithful shortcuts: `Ctrl+T` new tab, `Ctrl+W` close tab, `Ctrl+1..9` switch tabs, `Ctrl+C` copy-if-selected, right-click copy/paste
 - 🔤 Bundled JetBrains Mono font for a consistent look on every machine
+- 🔗 **ZeroLink** — serverless, end-to-end encrypted P2P remote terminal (SSH-like): share a dedicated shell to another machine with a one-time code (see below)
 
 ## Requirements
 
@@ -174,6 +175,41 @@ foreach ($base in 'HKCU:\Software\Classes\Directory\shell\CupertinoTerminal',
 
 To remove: delete both `CupertinoTerminal` keys under `HKCU:\Software\Classes\Directory`.
 
+## ZeroLink — encrypted P2P remote terminal
+
+ZeroLink turns a terminal tab into an **SSH-like remote session** over a direct,
+end-to-end encrypted peer-to-peer tunnel. There is **no server** — the two
+machines talk directly and no third party can see the traffic.
+
+**Share a shell (host):** type `zl share` in a tab (or press `Ctrl+L` → *Share*).
+You get a one-time **ZeroLink code**. Send it to the other person.
+
+**Connect (client):** on the other machine, type `zl connect <code>` (or `Ctrl+L`
+→ *Connect*, paste the code). You get a fresh, private shell on the host — the
+host does **not** share its own screen.
+
+While connected, open the panel with `Ctrl+L` for session tools:
+
+| Capability | How |
+|---|---|
+| Interactive shell | A dedicated shell is spawned per connection |
+| Window size sync | Resizing your window resizes the remote shell (SIGWINCH) |
+| Run one command | `zl exec`-style single command over the tunnel |
+| Send a file | Panel → **Send File** (lands in the host's `~/ZeroLink-Downloads`) |
+| Fetch a file | Panel → **Get** `/remote/path` (saved to your `~/ZeroLink-Downloads`) |
+| Port forward | Panel → local port → `host:port` (like `ssh -L`) |
+
+**Security:** ephemeral ECDH P-256 → HKDF → AES-256-GCM, with a monotonic
+counter bound as authenticated data (replay protection). The connection code is
+**one-time**, expires after **5 minutes**, and is HMAC-signed. Even the app's
+sever-less design never routes content through a third party.
+
+**Networks:** works on the same LAN out of the box. Across different networks it
+depends on your NATs — most home routers work via STUN hole-punching. Behind a
+symmetric/port-restricted NAT you may need a TURN relay: set `settings.zlTurn`
+(`{ url, username, credential }`) or the `ZEROLINK_TURN_URL` / `_USER` / `_CRED`
+environment variables. Content stays E2E encrypted even when relayed.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -184,6 +220,7 @@ To remove: delete both `CupertinoTerminal` keys under `HKCU:\Software\Classes\Di
 | `Ctrl+C` | Copy if text is selected, otherwise send SIGINT |
 | `Ctrl+V` | Paste |
 | `Ctrl+,` | Settings |
+| `Ctrl+L` | ZeroLink panel (share / connect / session tools) |
 | Right-click | Copy selection / paste |
 
 ## License

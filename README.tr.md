@@ -18,6 +18,7 @@ Electron + xterm.js + node-pty ile geliştirildi. Kurulumda derleme gerekmez: PT
 - 📁 İstenen klasörde açılma: komut satırı argümanı olarak dizin verilebilir (isteğe bağlı Gezgin sağ-tık menüsü bunu kullanır)
 - ⌨️ macOS'a sadık kısayollar: `Ctrl+T` yeni sekme, `Ctrl+W` sekmeyi kapat, `Ctrl+1..9` sekme geçişi, `Ctrl+C` seçim varsa kopyala, sağ tık kopyala/yapıştır
 - 🔤 Gömülü JetBrains Mono fontu — her makinede aynı görünüm
+- 🔗 **ZeroLink** — sunucusuz, uçtan uca şifreli P2P uzak terminal (SSH benzeri): tek kullanımlık kodla başka bir makineye özel kabuk paylaşın (aşağıya bakın)
 
 ## Gereksinimler
 
@@ -174,6 +175,41 @@ foreach ($base in 'HKCU:\Software\Classes\Directory\shell\CupertinoTerminal',
 
 Kaldırmak için: `HKCU:\Software\Classes\Directory` altındaki iki `CupertinoTerminal` anahtarını silin.
 
+## ZeroLink — şifreli P2P uzak terminal
+
+ZeroLink, bir terminal sekmesini doğrudan, uçtan uca şifreli bir eşler-arası (P2P)
+tünel üzerinden **SSH benzeri uzak oturuma** dönüştürür. **Sunucu yoktur** — iki
+makine doğrudan konuşur ve içeriği hiçbir üçüncü taraf göremez.
+
+**Kabuk paylaş (host):** bir sekmeye `zl share` yazın (veya `Ctrl+L` → *Paylaş*).
+Tek kullanımlık bir **ZeroLink kodu** alırsınız. Kodu karşı tarafa gönderin.
+
+**Bağlan (client):** diğer makinede `zl connect <kod>` yazın (veya `Ctrl+L` →
+*Bağlan*, kodu yapıştırın). Host'ta size özel, taze bir kabuk açılır — host kendi
+ekranını paylaşmaz.
+
+Bağlıyken paneli `Ctrl+L` ile açıp oturum araçlarını kullanın:
+
+| Yetenek | Nasıl |
+|---|---|
+| İnteraktif kabuk | Her bağlantıya özel taze kabuk açılır |
+| Boyut senkronu | Pencereyi büyütünce uzak kabuk da uyum sağlar (SIGWINCH) |
+| Tek komut çalıştır | Tünel üzerinden `zl exec` benzeri tek komut |
+| Dosya gönder | Panel → **Dosya Gönder** (host'un `~/ZeroLink-Downloads`'ına düşer) |
+| Dosya al | Panel → **Al** `/uzak/yol` (sizin `~/ZeroLink-Downloads`'ınıza iner) |
+| Port yönlendirme | Panel → yerel port → `host:port` (`ssh -L` gibi) |
+
+**Güvenlik:** geçici ECDH P-256 → HKDF → AES-256-GCM; her mesajda kimlik-doğrulamalı
+veri olarak bağlanan monotonik sayaç (replay koruması). Bağlantı kodu **tek
+kullanımlık**, **5 dakika** sonra geçersiz ve HMAC imzalı. Sunucusuz tasarım içeriği
+asla üçüncü bir tarafa yönlendirmez.
+
+**Ağlar:** aynı yerel ağda doğrudan çalışır. Farklı ağlar arasında NAT'larınıza
+bağlıdır — çoğu ev modemi STUN delme (hole-punching) ile çalışır. Simetrik/port-kısıtlı
+NAT arkasında bir TURN relay gerekebilir: `settings.zlTurn`
+(`{ url, username, credential }`) veya `ZEROLINK_TURN_URL` / `_USER` / `_CRED`
+ortam değişkenlerini ayarlayın. Relay edilse bile içerik uçtan uca şifreli kalır.
+
 ## Klavye kısayolları
 
 | Kısayol | İşlev |
@@ -184,6 +220,7 @@ Kaldırmak için: `HKCU:\Software\Classes\Directory` altındaki iki `CupertinoTe
 | `Ctrl+C` | Metin seçiliyse kopyala, değilse SIGINT gönder |
 | `Ctrl+V` | Yapıştır |
 | `Ctrl+,` | Ayarlar |
+| `Ctrl+L` | ZeroLink paneli (paylaş / bağlan / oturum araçları) |
 | Sağ tık | Seçimi kopyala / yapıştır |
 
 ## Lisans
