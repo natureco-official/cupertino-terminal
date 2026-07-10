@@ -27,6 +27,8 @@ for (const a of process.argv.slice(2)) {
   } catch (_) { /* dizin degil, atla */ }
 }
 
+// Uygulama adi (menü çubuğu, Dock, bildirimler) — yoksa Electron "Electron" gösterir
+app.setName('Cupertino Terminal');
 // Gorev cubugu gruplama/sabitleme kimligi (yoksa Windows uygulamayi "electron" sanir)
 app.setAppUserModelId('com.cupertinoterminal.app');
 
