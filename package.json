@@ -1,26 +1,48 @@
 {
   "name": "cupertino-terminal",
-  "version": "0.1.0",
-  "description": "Open-source terminal app that brings the macOS Terminal experience to Windows (WSL supported, bilingual TR/EN UI)",
+  "version": "0.2.0",
+  "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
+  "bin": {
+    "cupertino-terminal": "launch.js"
+  },
   "author": "",
   "license": "MIT",
+  "keywords": [
+    "terminal",
+    "electron",
+    "macos",
+    "xterm",
+    "wsl",
+    "zsh",
+    "ssh",
+    "p2p",
+    "remote-terminal",
+    "encrypted"
+  ],
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder"
   },
-  "devDependencies": {
-    "@electron/rebuild": "^3.6.0",
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
-  },
+  "files": [
+    "src/",
+    "launch.js",
+    "README.md",
+    "README.tr.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "electron": "^31.0.0",
     "electron-store": "^8.2.0",
     "node-datachannel": "^0.12.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "xterm-addon-web-links": "^0.9.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.cupertinoterminal.app",
@@ -33,6 +55,10 @@
       "src/**/*",
       "package.json"
     ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
     "win": {
       "target": "nsis",
       "icon": "src/icon.ico"

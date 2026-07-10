@@ -30,19 +30,37 @@ for (const a of process.argv.slice(2)) {
 // Gorev cubugu gruplama/sabitleme kimligi (yoksa Windows uygulamayi "electron" sanir)
 app.setAppUserModelId('com.cupertinoterminal.app');
 
+// ── Shell profilleri (platformlar-arası) ───────────────────────────────────
+// Windows: WSL / PowerShell 5+7 / CMD;  macOS-Unix: zsh / bash / fish
 const shellProfiles = {
-  // Varsayilan WSL distro'su (`wsl.exe` -d'siz) → kullanici Ubuntu kurunca otomatik onu kullanir.
-  wsl: { command: 'wsl.exe', args: ['--cd', '~'], name: 'WSL (zsh)' },
-  powershell: { command: 'powershell.exe', args: [], name: 'PowerShell' },
-  cmd: { command: 'cmd.exe', args: [], name: 'Command Prompt' },
+  zsh:        { command: 'zsh',            args: ['-l'],        name: 'zsh' },
+  bash:       { command: 'bash',           args: ['-l'],        name: 'bash' },
+  fish:       { command: 'fish',           args: ['-l'],        name: 'fish' },
+  wsl:        { command: 'wsl.exe',        args: ['--cd', '~'], name: 'WSL' },
+  powershell: { command: 'powershell.exe', args: [],            name: 'PowerShell' },
+  pwsh:       { command: 'pwsh.exe',       args: [],            name: 'PowerShell 7' },
+  cmd:        { command: 'cmd.exe',        args: [],            name: 'Command Prompt' },
 };
+
+// Bir komut sistemde var mı? (where on Windows, which elsewhere)
+const _cmdCache = new Map();
+function commandExists(cmd) {
+  if (_cmdCache.has(cmd)) return _cmdCache.get(cmd);
+  let ok = false;
+  try {
+    const probe = process.platform === 'win32' ? 'where' : 'command -v';
+    execSync(`${probe} ${cmd}`, { timeout: 3000, stdio: 'ignore' });
+    ok = true;
+  } catch (_) { ok = false; }
+  _cmdCache.set(cmd, ok);
+  return ok;
+}
 
 // WSL'de GERCEKTEN yuklu bir distro var mi? (yoksa PowerShell'e duseriz)
 let _wslCache = null;
 function wslAvailable() {
   if (_wslCache !== null) return _wslCache;
   try {
-    // wsl -l -q yuklu distrolari listeler (UTF-16LE); bir distro varsa cikti bos olmaz.
     const out = execSync('wsl.exe -l -q', { timeout: 4000, stdio: ['ignore', 'pipe', 'ignore'] })
       .toString('utf16le').replace(/\0/g, '').trim();
     _wslCache = out.length > 0;
@@ -51,55 +69,63 @@ function wslAvailable() {
 }
 
 /**
- * Varsayilan shell: WSL distro'su varsa WSL (macOS/zsh deneyimi), yoksa PowerShell.
- * Boylece WSL kurulu degilken bile uygulama calisir; Ubuntu kurulunca otomatik WSL'e gecer.
+ * Varsayilan shell:
+ *   Windows → WSL distro'su varsa WSL (macOS/zsh deneyimi), yoksa PowerShell.
+ *   macOS/Unix → $SHELL (zsh/bash/fish), yoksa zsh.
  */
 function getDefaultShell() {
   const savedShell = store.get('shell');
   if (savedShell && shellProfiles[savedShell]) return shellProfiles[savedShell];
-  return wslAvailable() ? shellProfiles.wsl : shellProfiles.powershell;
+
+  if (process.platform === 'win32') {
+    return wslAvailable() ? shellProfiles.wsl : shellProfiles.powershell;
+  }
+  const sysShell = (process.env.SHELL || '/bin/zsh').split('/').pop();
+  return shellProfiles[sysShell] || shellProfiles.zsh;
 }
 
 let mainWindow;
 const ptyProcesses = new Map(); // windowId/tabId -> pty process
 
-// Acrylic (bugulu cam) DWM malzemesi yalnizca Windows 11 22H2+ (build 22621) ile gelir.
-// Eski Windows'ta backgroundMaterial YOK SAYILIR ve seffaf biraktigimiz pencere zemini
-// SIYAH gorunur → destek yoksa opak zemine dusulur. (Berrak kip transparent:true ile
-// Windows 10 dahil her surumde calisir.)
+// Bugulu cam: Windows'ta acrylic (DWM, yalnizca Win11 22H2+ / build 22621),
+// macOS'ta vibrancy (10.10+, her zaman). Desteklenmeyen eski Windows'ta opak zemine düşülür.
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 const WIN_BUILD = parseInt(os.release().split('.')[2] || '0', 10);
-const ACRYLIC_SUPPORTED = process.platform === 'win32' && WIN_BUILD >= 22621;
+const ACRYLIC_SUPPORTED = IS_WIN && WIN_BUILD >= 22621;
+const BLUR_SUPPORTED = ACRYLIC_SUPPORTED || IS_MAC; // renderer'a "Bugulu" secenegi icin
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
   // Cam efekti (ayarlardan): 'acrylic' = bugulu blur; 'clear' = kristal net saydamlik.
-  // transparent:true pencere OLUSTURULURKEN verilmek zorunda (sonradan degistirilemez)
-  // → kip degisince uygulama yeniden baslatilir (app:relaunch IPC).
+  // transparent:true pencere OLUSTURULURKEN verilmek zorunda → kip degisince yeniden baslatilir.
   let glassMode = (store.get('settings', {}).glass === 'clear') ? 'clear' : 'acrylic';
-  if (glassMode === 'acrylic' && !ACRYLIC_SUPPORTED) glassMode = 'opaque';
+  if (glassMode === 'acrylic' && !BLUR_SUPPORTED) glassMode = 'opaque';
+
+  // Platforma göre bugulu cam ayarlari
+  let glassOpts = {};
+  if (glassMode === 'clear') {
+    glassOpts = { transparent: true };                       // her platformda per-piksel saydam
+  } else if (glassMode === 'acrylic') {
+    glassOpts = IS_MAC
+      ? { vibrancy: 'under-window', visualEffectState: 'active', transparent: true }
+      : { backgroundMaterial: 'acrylic', vibrancy: 'sidebar' /* Win'de no-op */ };
+  }
 
   mainWindow = new BrowserWindow({
     width: Math.min(1100, width - 100),
     height: Math.min(700, height - 100),
     minWidth: 400,
     minHeight: 250,
-    icon: path.join(__dirname, 'icon.ico'),
+    ...(IS_WIN ? { icon: path.join(__dirname, 'icon.ico') } : {}),
     // macOS Terminal'deki gibi: baslik cubugu gizli, ozel traffic-light butonlari
     titleBarStyle: 'hidden',
+    ...(IS_MAC ? { trafficLightPosition: { x: 12, y: 12 } } : {}),
     frame: false,
-    // SEFFAF pencere zemini (acrylic/clear kiplerinde) SART: opak renk verilirse acrylic
-    // hic gorunmez ve CSS'teki rgba alfasi sadece bu renge karisir. Gercek zemin rengini
-    // CSS --bg verir. Acrylic desteklenmeyen eski Windows'ta ise opak zemin kullanilir
-    // (seffaf bolgeler siyah kalacagi icin).
+    // SEFFAF pencere zemini SART: opak renk verilirse blur hic gorunmez. Gercek zemini CSS --bg verir.
     backgroundColor: glassMode === 'opaque' ? '#1e1e1e' : '#00000000',
-    ...(glassMode === 'clear'
-      // Berrak: gercek per-piksel seffaflik (blur yok; DWM golgesi kaybolur, kabul edilen taviz)
-      ? { transparent: true }
-      : glassMode === 'acrylic'
-        // Bugulu: Windows 11 acrylic (macOS vibrancy/blur muadili); transparent ile BIRLIKTE kullanilamaz
-        ? { backgroundMaterial: 'acrylic', vibrancy: 'sidebar' /* Windows'ta no-op, zararsiz */ }
-        : {}),
+    ...glassOpts,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -205,10 +231,18 @@ ipcMain.on('pty:kill', (event, { tabId }) => {
   ptyProcesses.delete(tabId);
 });
 
-ipcMain.handle('shell:list', () => shellProfiles);
+// Sadece sistemde gercekten yuklu olan kabuklari dondur (platform-bagimsiz)
+ipcMain.handle('shell:list', () => {
+  const available = {};
+  for (const [key, profile] of Object.entries(shellProfiles)) {
+    if (commandExists(profile.command)) available[key] = profile;
+  }
+  // Hicbiri bulunamazsa (nad; PATH sorunu) tam listeyi dondur ki UI bos kalmasin
+  return Object.keys(available).length ? available : shellProfiles;
+});
 
-// Sistem yetenekleri (renderer arayuzu Win10'da bugulu secenegini devre disi gosterir)
-ipcMain.handle('sys:caps', () => ({ acrylic: ACRYLIC_SUPPORTED }));
+// Sistem yetenekleri: bugulu cam destegi + platform (renderer ⌘/Ctrl ve Win10 fallback icin)
+ipcMain.handle('sys:caps', () => ({ acrylic: BLUR_SUPPORTED, platform: process.platform }));
 
 // Cam efekti degisiminde temiz yeniden baslatma (transparent sonradan degistirilemez)
 ipcMain.on('app:relaunch', () => {
