@@ -265,7 +265,7 @@ ipcMain.on('shell:openExternal', (event, url) => {
 // tek bir UAC onayı çıkar). Mac/Linux: imzasız olduğu için sessiz kurulum yapılamaz →
 // GitHub Releases'ten bildir + tek tıkla installer indirme. (Mac sessiz güncelleme Apple
 // sertifikası ister.)
-const UPDATE_REPO = 'Gencayolgun/cupertino-terminal';
+const UPDATE_REPO = 'natureco-official/cupertino-terminal';
 const _canAutoUpdate = process.platform === 'win32' && app.isPackaged;
 let autoUpdater = null;
 let _manualCheck = false;
