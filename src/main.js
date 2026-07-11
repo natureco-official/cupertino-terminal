@@ -295,6 +295,28 @@ async function checkForUpdates(manual = false) {
 }
 ipcMain.on('update:check', () => checkForUpdates(true));
 
+// ---- NatureCo Hesabı (SSO) — CLI ile aynı ~/.natureco/auth.json oturumunu paylaşır ----
+const ncAccount = require('./natureco-account');
+ipcMain.handle('nc:account:status', async () => {
+  if (!ncAccount.isLoggedIn()) return { loggedIn: false };
+  const me = await ncAccount.whoami().catch(() => null);
+  return { loggedIn: !!me, email: me ? me.email : ncAccount.currentEmail() };
+});
+ipcMain.handle('nc:account:sendOtp', async (e, { email }) => { await ncAccount.sendOtp(email); return { ok: true }; });
+ipcMain.handle('nc:account:verify', async (e, { email, value }) => {
+  const v = String(value || '').trim();
+  if (/^https?:\/\//i.test(v) || v.includes('token')) await ncAccount.verifyLink(v);
+  else await ncAccount.verifyOtp(email, v);
+  const me = await ncAccount.whoami().catch(() => null);
+  return { email: me ? me.email : ncAccount.currentEmail() };
+});
+ipcMain.handle('nc:account:password', async (e, { email, password }) => {
+  await ncAccount.loginWithPassword(email, password);
+  const me = await ncAccount.whoami().catch(() => null);
+  return { email: me ? me.email : email };
+});
+ipcMain.on('nc:account:logout', () => ncAccount.logout());
+
 // ---- IPC: terminal sekmesi olustur ----
 ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows }) => {
   if (!pty) throw new Error('node-pty mevcut degil');

@@ -299,6 +299,10 @@ const LANGS = {
     zlPullPlaceholder: '/remote/path/file',
     updateSection: 'Updates', version: 'Version', checkUpdate: 'Check for updates',
     updateGet: 'Update', updateAvail: 'New version', updateNone: 'You are up to date.', updateChecking: 'Checking…',
+    accSection: 'NatureCo Account', accEmail: 'Email', accSendCode: 'Send login code', accUsePass: 'Use password',
+    accCodePh: 'Code or login link', accVerify: 'Verify', accPassPh: 'Password', accSignin: 'Sign in',
+    accSignedAs: 'Signed in as', accLogout: 'Log out',
+    accBadEmail: 'Enter a valid email', accSending: 'Sending…', accSent: 'Check your email — paste the code or login link', accVerifying: 'Verifying…',
   },
   tr: {
     close: 'Kapat', minimize: 'Küçült', zoom: 'Büyüt',
@@ -357,6 +361,10 @@ const LANGS = {
     zlPullPlaceholder: '/uzak/yol/dosya',
     updateSection: 'Güncelleme', version: 'Sürüm', checkUpdate: 'Güncellemeleri denetle',
     updateGet: 'Güncelle', updateAvail: 'Yeni sürüm', updateNone: 'En güncel sürümdesin.', updateChecking: 'Denetleniyor…',
+    accSection: 'NatureCo Hesabı', accEmail: 'E-posta', accSendCode: 'Giriş kodu gönder', accUsePass: 'Şifre ile',
+    accCodePh: 'Kod veya giriş linki', accVerify: 'Doğrula', accPassPh: 'Şifre', accSignin: 'Giriş',
+    accSignedAs: 'Giriş:', accLogout: 'Çıkış',
+    accBadEmail: 'Geçerli e-posta gir', accSending: 'Gönderiliyor…', accSent: 'E-postana bak — kodu ya da giriş linkini yapıştır', accVerifying: 'Doğrulanıyor…',
   },
 };
 function t(key) {
@@ -435,6 +443,16 @@ function applyLanguage() {
   set('#lbl-version', 'textContent', L.version);
   set('#btn-check-update', 'textContent', L.checkUpdate);
   set('#up-get', 'textContent', L.updateGet);
+  set('#h3-account', 'textContent', L.accSection);
+  set('#lbl-acc-email', 'textContent', L.accEmail);
+  set('#nc-acc-sendcode', 'textContent', L.accSendCode);
+  set('#nc-acc-usepass', 'textContent', L.accUsePass);
+  set('#nc-acc-code', 'placeholder', L.accCodePh);
+  set('#nc-acc-verify', 'textContent', L.accVerify);
+  set('#nc-acc-pass', 'placeholder', L.accPassPh);
+  set('#nc-acc-signin', 'textContent', L.accSignin);
+  set('#lbl-acc-signed', 'textContent', L.accSignedAs);
+  set('#nc-acc-logout', 'textContent', L.accLogout);
 }
 
 // ---- Ayarlar (macOS Terminal Settings muadili; electron-store'da kalici) ----
@@ -836,6 +854,7 @@ function toggleSettings() {
 function openSettings() {
   syncSettingsUI();
   overlayEl.hidden = false;
+  try { _ncRefreshAccount?.(); } catch (_) {} // CLI'da giriş yapılmış olabilir → tazele
 }
 function closeSettings() {
   overlayEl.hidden = true;
@@ -1386,6 +1405,61 @@ document.getElementById('zl-back-btn').addEventListener('click', () => {
     window.termAPI.checkForUpdates();
     setTimeout(() => { checkBtn.disabled = false; }, 5000);
   });
+})();
+
+// ── NatureCo Hesabı (SSO) — CLI ile aynı oturumu paylaşır ──
+const _ncRefreshAccount = (() => {
+  const $ = (id) => document.getElementById(id);
+  const L = () => LANGS[settings.lang] || LANGS.en;
+  const setStatus = (t, cls = '') => { const el = $('nc-acc-status'); if (el) { el.textContent = t; el.className = 'hint ' + cls; } };
+
+  function showLoggedIn(email) {
+    if ($('nc-acc-out')) $('nc-acc-out').hidden = true;
+    if ($('nc-acc-in')) $('nc-acc-in').hidden = false;
+    if ($('nc-acc-who')) $('nc-acc-who').textContent = email || '';
+  }
+  function showLoggedOut() {
+    if ($('nc-acc-in')) $('nc-acc-in').hidden = true;
+    if ($('nc-acc-out')) $('nc-acc-out').hidden = false;
+    if ($('nc-acc-otp')) $('nc-acc-otp').hidden = true;
+    if ($('nc-acc-pw')) $('nc-acc-pw').hidden = true;
+    setStatus('');
+  }
+  async function refresh() {
+    try {
+      const s = await window.termAPI.ncAccountStatus();
+      if (s && s.loggedIn) showLoggedIn(s.email); else showLoggedOut();
+    } catch (_) { showLoggedOut(); }
+  }
+  refresh();
+
+  $('nc-acc-sendcode')?.addEventListener('click', async () => {
+    const email = ($('nc-acc-email').value || '').trim();
+    if (!/.+@.+\..+/.test(email)) { setStatus(L().accBadEmail || 'Enter a valid email', 'err'); return; }
+    setStatus(L().accSending || 'Sending…');
+    try {
+      await window.termAPI.ncAccountSendOtp(email);
+      $('nc-acc-otp').hidden = false; $('nc-acc-pw').hidden = true;
+      setStatus(L().accSent || 'Check your email — paste the code or login link', 'ok');
+    } catch (e) { setStatus('⚠ ' + e.message, 'err'); }
+  });
+  $('nc-acc-usepass')?.addEventListener('click', () => { $('nc-acc-pw').hidden = false; $('nc-acc-otp').hidden = true; setStatus(''); });
+
+  async function doVerify(getVal, apiCall) {
+    const email = ($('nc-acc-email').value || '').trim();
+    const val = getVal();
+    if (!val) return;
+    setStatus(L().accVerifying || 'Verifying…');
+    try { const r = await apiCall(email, val); showLoggedIn(r.email); }
+    catch (e) { setStatus('⚠ ' + e.message, 'err'); }
+  }
+  $('nc-acc-verify')?.addEventListener('click', () => doVerify(() => ($('nc-acc-code').value || '').trim(), (em, v) => window.termAPI.ncAccountVerify(em, v)));
+  $('nc-acc-code')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('nc-acc-verify').click(); });
+  $('nc-acc-signin')?.addEventListener('click', () => doVerify(() => $('nc-acc-pass').value, (em, v) => window.termAPI.ncAccountPassword(em, v)));
+  $('nc-acc-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('nc-acc-signin').click(); });
+  $('nc-acc-logout')?.addEventListener('click', () => { window.termAPI.ncAccountLogout(); showLoggedOut(); });
+
+  return refresh;
 })();
 
 // Gomulu fontu xterm ilk olcumden ONCE yukle (yoksa glyph metrigi kayar), sonra ilk sekme.

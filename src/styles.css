@@ -1027,3 +1027,28 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 #update-status { min-height: 0; }
 #update-status.ok { color: #34d399; }
 #update-status.err { color: #fb7185; }
+
+/* ── NatureCo Hesabı (SSO) — ayarlar bölümü ── */
+.nc-acc-input {
+  flex: 1 1 auto; min-width: 0;
+  background: rgba(0,0,0,0.28); color: var(--fg, #eef4f4);
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+  padding: 7px 10px; font-size: 13px; font-family: inherit; outline: none;
+}
+.nc-acc-input:focus { border-color: rgba(52,211,153,0.55); }
+.nc-acc-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.nc-acc-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.nc-acc-link-btn {
+  -webkit-app-region: no-drag; cursor: pointer; background: transparent; border: none;
+  color: #22d3ee; font-size: 12.5px; text-decoration: underline; padding: 0;
+}
+.nc-acc-danger {
+  -webkit-app-region: no-drag; cursor: pointer;
+  background: rgba(251,113,133,0.14); color: #fb7185;
+  border: 1px solid rgba(251,113,133,0.30); border-radius: 8px;
+  padding: 6px 12px; font-size: 12.5px; font-weight: 600;
+}
+.nc-acc-danger:hover { background: rgba(251,113,133,0.22); }
+#nc-acc-status.ok { color: #34d399; }
+#nc-acc-status.err { color: #fb7185; }
+#nc-acc-who { color: #34d399; }

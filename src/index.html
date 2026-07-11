@@ -220,6 +220,35 @@
           </div>
         </div>
 
+        <div class="settings-section" id="nc-account-section">
+          <h3 id="h3-account">NatureCo Account</h3>
+          <div id="nc-acc-out">
+            <div class="settings-row">
+              <label id="lbl-acc-email">Email</label>
+              <input id="nc-acc-email" class="nc-acc-input" placeholder="you@example.com" spellcheck="false" autocomplete="off" autocorrect="off" />
+            </div>
+            <div class="nc-acc-actions">
+              <button id="nc-acc-sendcode" class="update-btn">Send login code</button>
+              <button id="nc-acc-usepass" class="nc-acc-link-btn">Use password</button>
+            </div>
+            <div id="nc-acc-otp" class="nc-acc-row" hidden>
+              <input id="nc-acc-code" class="nc-acc-input" placeholder="Code or login link" spellcheck="false" autocomplete="off" />
+              <button id="nc-acc-verify" class="update-btn">Verify</button>
+            </div>
+            <div id="nc-acc-pw" class="nc-acc-row" hidden>
+              <input id="nc-acc-pass" class="nc-acc-input" type="password" placeholder="Password" />
+              <button id="nc-acc-signin" class="update-btn">Sign in</button>
+            </div>
+            <p class="hint" id="nc-acc-status"></p>
+          </div>
+          <div id="nc-acc-in" hidden>
+            <div class="settings-row">
+              <label><span id="lbl-acc-signed">Signed in as</span> <span id="nc-acc-who" class="mono-ver"></span></label>
+              <button id="nc-acc-logout" class="nc-acc-danger">Log out</button>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section">
           <h3 id="h3-update">Updates</h3>
           <div class="settings-row">

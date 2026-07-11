@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld('termAPI', {
   // Dis baglanti (NatureCo imzasi / natureco.me) — sistem tarayicisinda ac
   openExternal: (url) => ipcRenderer.send('shell:openExternal', url),
 
+  // NatureCo Hesabı (SSO)
+  ncAccountStatus:   ()                 => ipcRenderer.invoke('nc:account:status'),
+  ncAccountSendOtp:  (email)            => ipcRenderer.invoke('nc:account:sendOtp', { email }),
+  ncAccountVerify:   (email, value)     => ipcRenderer.invoke('nc:account:verify', { email, value }),
+  ncAccountPassword: (email, password)  => ipcRenderer.invoke('nc:account:password', { email, password }),
+  ncAccountLogout:   ()                 => ipcRenderer.send('nc:account:logout'),
+
   // Otomatik guncelleme
   checkForUpdates: () => ipcRenderer.send('update:check'),
   onUpdateAvailable: (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:available', l); return () => ipcRenderer.removeListener('update:available', l); },
