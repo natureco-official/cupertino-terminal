@@ -50,9 +50,12 @@ contextBridge.exposeInMainWorld('termAPI', {
 
   // Otomatik guncelleme
   checkForUpdates: () => ipcRenderer.send('update:check'),
-  onUpdateAvailable: (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:available', l); return () => ipcRenderer.removeListener('update:available', l); },
-  onUpdateNone:      (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:none', l);      return () => ipcRenderer.removeListener('update:none', l); },
-  onUpdateError:     (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:error', l);     return () => ipcRenderer.removeListener('update:error', l); },
+  installUpdate:   () => ipcRenderer.send('update:install'),   // Windows: indirileni kur + yeniden baslat
+  onUpdateAvailable:  (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:available', l);  return () => ipcRenderer.removeListener('update:available', l); },
+  onUpdateProgress:   (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:progress', l);   return () => ipcRenderer.removeListener('update:progress', l); },
+  onUpdateDownloaded: (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:downloaded', l); return () => ipcRenderer.removeListener('update:downloaded', l); },
+  onUpdateNone:       (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:none', l);       return () => ipcRenderer.removeListener('update:none', l); },
+  onUpdateError:      (cb) => { const l = (_, d) => cb(d); ipcRenderer.on('update:error', l);      return () => ipcRenderer.removeListener('update:error', l); },
 
   // Pencere odak/blur — traffic-light'lari griye cevirmek icin (macOS davranisi)
   onFocusChange: (callback) => {

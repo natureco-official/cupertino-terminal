@@ -17,10 +17,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # electron-updater icin latest.yml + .blockmap da Release'e yuklenmeli
           - os: windows-latest
-            pattern: 'dist/*.exe'
+            pattern: |
+              dist/*.exe
+              dist/latest.yml
+              dist/*.blockmap
           - os: macos-latest
-            pattern: 'dist/*.dmg'
+            pattern: |
+              dist/*.dmg
+              dist/latest-mac.yml
+              dist/*.blockmap
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

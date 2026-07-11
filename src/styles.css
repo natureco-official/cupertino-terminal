@@ -606,6 +606,41 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 #btn-zerolink:hover { background: var(--tab-active-bg); color: #22d3ee; }
 #btn-zerolink.zl-active { color: #22d3ee; }
 
+/* NatureCo hesap ikonu — titlebar'da giriş durumunu gösterir */
+#btn-account {
+  -webkit-app-region: no-drag;
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--tab-inactive-fg);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: background 140ms ease, color 140ms ease;
+}
+#btn-account:hover { background: var(--tab-active-bg); color: #34d399; }
+/* Giriş yapılınca: zümrüt renk + yeşil rozet */
+#btn-account.signed-in { color: #34d399; }
+#btn-account .acc-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 1.5px var(--titlebar-bg, #1a1a1a);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+#btn-account.signed-in .acc-dot { opacity: 1; transform: scale(1); }
+
 /* Overlay zemin */
 #zl-overlay {
   position: fixed;
@@ -1052,3 +1087,23 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 #nc-acc-status.ok { color: #34d399; }
 #nc-acc-status.err { color: #fb7185; }
 #nc-acc-who { color: #34d399; }
+
+/* Giriş sonrası ekosistem paneli — SSO'nun değerini gösterir */
+#nc-eco {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(52,211,153,0.10), rgba(34,211,238,0.08));
+  border: 1px solid rgba(52,211,153,0.20);
+}
+.nc-eco-note { margin: 0 0 8px; font-size: 12px; color: var(--muted, #9aa4ad); line-height: 1.45; }
+.nc-eco-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.nc-eco-link {
+  -webkit-app-region: no-drag; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  color: #22d3ee; text-decoration: none;
+  background: rgba(34,211,238,0.10); border: 1px solid rgba(34,211,238,0.22);
+  transition: background 140ms ease;
+}
+.nc-eco-link:hover { background: rgba(34,211,238,0.20); }

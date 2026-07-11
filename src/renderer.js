@@ -299,6 +299,9 @@ const LANGS = {
     zlPullPlaceholder: '/remote/path/file',
     updateSection: 'Updates', version: 'Version', checkUpdate: 'Check for updates',
     updateGet: 'Update', updateAvail: 'New version', updateNone: 'You are up to date.', updateChecking: 'Checking…',
+    updateDownloading: 'Downloading update…', updateReady: 'Update ready', updateRestart: 'Restart & update',
+    accSignInTip: 'Sign in to NatureCo', accSignedInTip: 'signed in',
+    accEcoNote: 'One NatureCo account — works across the CLI, this terminal and the portal.', accEcoDev: 'Developers',
     accSection: 'NatureCo Account', accEmail: 'Email', accSendCode: 'Send login code', accUsePass: 'Use password',
     accCodePh: 'Code or login link', accVerify: 'Verify', accPassPh: 'Password', accSignin: 'Sign in',
     accSignedAs: 'Signed in as', accLogout: 'Log out',
@@ -361,6 +364,9 @@ const LANGS = {
     zlPullPlaceholder: '/uzak/yol/dosya',
     updateSection: 'Güncelleme', version: 'Sürüm', checkUpdate: 'Güncellemeleri denetle',
     updateGet: 'Güncelle', updateAvail: 'Yeni sürüm', updateNone: 'En güncel sürümdesin.', updateChecking: 'Denetleniyor…',
+    updateDownloading: 'Güncelleme indiriliyor…', updateReady: 'Güncelleme hazır', updateRestart: 'Yeniden başlat',
+    accSignInTip: 'NatureCo hesabına giriş yap', accSignedInTip: 'giriş yapıldı',
+    accEcoNote: 'Tek NatureCo hesabı — CLI, bu terminal ve portalda geçerli.', accEcoDev: 'Geliştiriciler',
     accSection: 'NatureCo Hesabı', accEmail: 'E-posta', accSendCode: 'Giriş kodu gönder', accUsePass: 'Şifre ile',
     accCodePh: 'Kod veya giriş linki', accVerify: 'Doğrula', accPassPh: 'Şifre', accSignin: 'Giriş',
     accSignedAs: 'Giriş:', accLogout: 'Çıkış',
@@ -409,6 +415,7 @@ function applyLanguage() {
   set('#cursor-style button[data-style="underline"]', 'title', L.underline);
   set('#cursor-style button[data-style="bar"]', 'title', L.bar);
   for (const el of document.querySelectorAll('.tab .tab-close')) el.title = L.close;
+  { const ab = document.getElementById('btn-account'); if (ab && !ab.classList.contains('signed-in')) ab.title = L.accSignInTip; }
 
   // ── ZeroLink UI ──
   set('#btn-zerolink', 'title', L.zlBtnTitle);
@@ -442,7 +449,7 @@ function applyLanguage() {
   set('#h3-update', 'textContent', L.updateSection);
   set('#lbl-version', 'textContent', L.version);
   set('#btn-check-update', 'textContent', L.checkUpdate);
-  set('#up-get', 'textContent', L.updateGet);
+  // #up-get etiketi güncelleme durumuna göre dinamiktir (Güncelle / Yeniden başlat) → burada set edilmez
   set('#h3-account', 'textContent', L.accSection);
   set('#lbl-acc-email', 'textContent', L.accEmail);
   set('#nc-acc-sendcode', 'textContent', L.accSendCode);
@@ -453,6 +460,8 @@ function applyLanguage() {
   set('#nc-acc-signin', 'textContent', L.accSignin);
   set('#lbl-acc-signed', 'textContent', L.accSignedAs);
   set('#nc-acc-logout', 'textContent', L.accLogout);
+  set('#nc-eco-note', 'textContent', L.accEcoNote);
+  set('#nc-eco-dev', 'textContent', L.accEcoDev);
 }
 
 // ---- Ayarlar (macOS Terminal Settings muadili; electron-store'da kalici) ----
@@ -512,6 +521,10 @@ document.getElementById('btn-min').addEventListener('click', () => window.termAP
 document.getElementById('btn-max').addEventListener('click', () => window.termAPI.maximize());
 document.getElementById('btn-new-tab').addEventListener('click', () => createTab());
 document.getElementById('btn-settings').addEventListener('click', () => toggleSettings());
+document.getElementById('btn-account')?.addEventListener('click', () => {
+  if (overlayEl.hidden) openSettings();
+  document.getElementById('nc-account-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 // ---- + dugmesine sag tik: sekme basina kabuk secimi (WSL/PowerShell/CMD) ----
 // Boylece varsayilan WSL olsa da tek jestte gercek Windows kabugu acilabilir.
@@ -1376,16 +1389,43 @@ document.getElementById('zl-back-btn').addEventListener('click', () => {
   const checkBtn = document.getElementById('btn-check-update');
   const statusEl = document.getElementById('update-status');
   const curVer = document.getElementById('cur-version');
-  let updateUrl = null;
+  const getBtn = document.getElementById('up-get');
+  let updateUrl = null;     // Mac/Linux: installer indirme linki
+  let mode = 'link';        // 'link' (Mac/Linux tek-tık indir) | 'silent' (Windows electron-updater)
   const L = () => LANGS[settings.lang] || LANGS.en;
+  const showPill = (text, btnLabel, btnEnabled = true) => {
+    if (upText) upText.textContent = text;
+    if (getBtn) { getBtn.textContent = btnLabel; getBtn.hidden = !btnLabel; getBtn.disabled = !btnEnabled; }
+    if (pill) pill.hidden = false;
+  };
 
   window.termAPI.getCaps().then((c) => { if (c && c.version && curVer) curVer.textContent = 'v' + c.version; }).catch(() => {});
 
-  window.termAPI.onUpdateAvailable(({ version, url }) => {
-    updateUrl = url;
-    const msg = (L().updateAvail || 'New version') + ' v' + version;
-    if (upText) upText.textContent = msg;
-    if (pill) pill.hidden = false;
+  window.termAPI.onUpdateAvailable(({ version, url, silent }) => {
+    if (silent) {
+      // Windows: arka planda sessiz indirme başladı
+      mode = 'silent';
+      showPill(L().updateDownloading || 'Downloading update…', '', false);
+      if (statusEl) { statusEl.textContent = (L().updateDownloading || 'Downloading update…'); statusEl.className = 'hint'; }
+    } else {
+      // Mac/Linux: linkli bildirim, kullanıcı tek tıkla indirir
+      mode = 'link';
+      updateUrl = url;
+      const msg = (L().updateAvail || 'New version') + ' v' + version;
+      showPill(msg, L().updateGet || 'Update', true);
+      if (statusEl) { statusEl.textContent = msg; statusEl.className = 'hint ok'; }
+    }
+  });
+  window.termAPI.onUpdateProgress(({ percent }) => {
+    const t = (L().updateDownloading || 'Downloading update…') + ' ' + percent + '%';
+    if (upText) upText.textContent = t;
+    if (statusEl) { statusEl.textContent = t; statusEl.className = 'hint'; }
+  });
+  window.termAPI.onUpdateDownloaded(({ version }) => {
+    // Windows: indirildi → yeniden başlatınca kurulur
+    mode = 'silent-ready';
+    const msg = (L().updateReady || 'Update ready') + ' v' + version;
+    showPill(msg, L().updateRestart || 'Restart & update', true);
     if (statusEl) { statusEl.textContent = msg; statusEl.className = 'hint ok'; }
   });
   window.termAPI.onUpdateNone(() => {
@@ -1397,7 +1437,10 @@ document.getElementById('zl-back-btn').addEventListener('click', () => {
     if (checkBtn) checkBtn.disabled = false;
   });
 
-  document.getElementById('up-get')?.addEventListener('click', () => { if (updateUrl) window.termAPI.openExternal(updateUrl); });
+  getBtn?.addEventListener('click', () => {
+    if (mode === 'silent-ready') window.termAPI.installUpdate();      // Windows: kur + yeniden başlat
+    else if (updateUrl) window.termAPI.openExternal(updateUrl);        // Mac/Linux: installer indir
+  });
   document.getElementById('up-close')?.addEventListener('click', () => { if (pill) pill.hidden = true; });
   checkBtn?.addEventListener('click', () => {
     if (statusEl) { statusEl.textContent = L().updateChecking || 'Checking…'; statusEl.className = 'hint'; }
@@ -1413,10 +1456,19 @@ const _ncRefreshAccount = (() => {
   const L = () => LANGS[settings.lang] || LANGS.en;
   const setStatus = (t, cls = '') => { const el = $('nc-acc-status'); if (el) { el.textContent = t; el.className = 'hint ' + cls; } };
 
+  function setTitlebar(loggedIn, email) {
+    const b = $('btn-account');
+    if (!b) return;
+    b.classList.toggle('signed-in', !!loggedIn);
+    b.title = loggedIn
+      ? 'NatureCo — ' + (email || (L().accSignedInTip || 'signed in'))
+      : (L().accSignInTip || 'Sign in to NatureCo');
+  }
   function showLoggedIn(email) {
     if ($('nc-acc-out')) $('nc-acc-out').hidden = true;
     if ($('nc-acc-in')) $('nc-acc-in').hidden = false;
     if ($('nc-acc-who')) $('nc-acc-who').textContent = email || '';
+    setTitlebar(true, email);
   }
   function showLoggedOut() {
     if ($('nc-acc-in')) $('nc-acc-in').hidden = true;
@@ -1424,6 +1476,7 @@ const _ncRefreshAccount = (() => {
     if ($('nc-acc-otp')) $('nc-acc-otp').hidden = true;
     if ($('nc-acc-pw')) $('nc-acc-pw').hidden = true;
     setStatus('');
+    setTitlebar(false);
   }
   async function refresh() {
     try {
@@ -1458,6 +1511,12 @@ const _ncRefreshAccount = (() => {
   $('nc-acc-signin')?.addEventListener('click', () => doVerify(() => $('nc-acc-pass').value, (em, v) => window.termAPI.ncAccountPassword(em, v)));
   $('nc-acc-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('nc-acc-signin').click(); });
   $('nc-acc-logout')?.addEventListener('click', () => { window.termAPI.ncAccountLogout(); showLoggedOut(); });
+
+  // Ekosistem hızlı bağlantıları (sistem tarayıcısında aç)
+  for (const a of document.querySelectorAll('.nc-eco-link')) {
+    a.addEventListener('click', () => { const u = a.getAttribute('data-eco'); if (u) window.termAPI.openExternal(u); });
+    a.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); a.click(); } });
+  }
 
   return refresh;
 })();

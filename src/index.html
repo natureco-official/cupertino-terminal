@@ -18,6 +18,13 @@
     <button id="btn-new-tab" title="New tab (Ctrl+T) — right-click to choose shell">+</button>
     <button id="btn-settings" title="Settings (Ctrl+,)">&#9881;</button>
     <button id="btn-zerolink" title="ZeroLink — P2P Encrypted Terminal (Ctrl+L)">⬡</button>
+    <button id="btn-account" title="Sign in to NatureCo">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+        <path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+      </svg>
+      <span class="acc-dot" aria-hidden="true"></span>
+    </button>
   </div>
 
   <!-- Tab bar: separate row like macOS; only visible with 2+ tabs -->
@@ -245,6 +252,13 @@
             <div class="settings-row">
               <label><span id="lbl-acc-signed">Signed in as</span> <span id="nc-acc-who" class="mono-ver"></span></label>
               <button id="nc-acc-logout" class="nc-acc-danger">Log out</button>
+            </div>
+            <div id="nc-eco">
+              <p id="nc-eco-note" class="nc-eco-note">One NatureCo account — works across CLI, this terminal and the portal.</p>
+              <div class="nc-eco-links">
+                <a class="nc-eco-link" data-eco="https://natureco.me" role="button" tabindex="0">🌐 <span id="nc-eco-home">natureco.me</span></a>
+                <a class="nc-eco-link" data-eco="https://developers.natureco.me" role="button" tabindex="0">🧑‍💻 <span id="nc-eco-dev">Developers</span></a>
+              </div>
             </div>
           </div>
         </div>

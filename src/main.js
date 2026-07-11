@@ -259,18 +259,55 @@ ipcMain.on('shell:openExternal', (event, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
 });
 
-// ---- Otomatik güncelleme denetimi (GitHub Releases) ----
-// Açılışta ve butonla denetler; yeni sürüm varsa renderer'a bildirir → kullanıcı
-// tek tıkla platformuna uygun installer'ı indirir. (Windows'ta ileride electron-updater
-// ile tam sessiz yapılabilir; Mac sessiz güncelleme Apple imzası ister.)
+// ---- Otomatik güncelleme ----
+// Windows (paketli): electron-updater ile TAM SESSİZ — yeni sürüm arka planda indirilir,
+// yeniden başlatınca kurulur (kullanıcı yalnız "Yeniden başlat" der; perMachine kurulumda
+// tek bir UAC onayı çıkar). Mac/Linux: imzasız olduğu için sessiz kurulum yapılamaz →
+// GitHub Releases'ten bildir + tek tıkla installer indirme. (Mac sessiz güncelleme Apple
+// sertifikası ister.)
 const UPDATE_REPO = 'Gencayolgun/cupertino-terminal';
+const _canAutoUpdate = process.platform === 'win32' && app.isPackaged;
+let autoUpdater = null;
+let _manualCheck = false;
+
 function _cmpVer(a, b) {
   const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
   const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
   for (let i = 0; i < 3; i++) { if ((pa[i] || 0) > (pb[i] || 0)) return 1; if ((pa[i] || 0) < (pb[i] || 0)) return -1; }
   return 0;
 }
+
+if (_canAutoUpdate) {
+  try {
+    autoUpdater = require('electron-updater').autoUpdater;
+    autoUpdater.autoDownload = true;             // yeni sürümü arka planda indir
+    autoUpdater.autoInstallOnAppQuit = true;     // kullanıcı çıkınca yine de kurulsun
+    autoUpdater.on('update-available', (info) => {
+      mainWindow?.webContents.send('update:available', { version: info.version, silent: true });
+    });
+    autoUpdater.on('download-progress', (p) => {
+      mainWindow?.webContents.send('update:progress', { percent: Math.max(0, Math.min(100, Math.round(p.percent || 0))) });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      mainWindow?.webContents.send('update:downloaded', { version: info.version });
+    });
+    autoUpdater.on('update-not-available', () => {
+      if (_manualCheck) mainWindow?.webContents.send('update:none', { version: app.getVersion() });
+    });
+    autoUpdater.on('error', (err) => {
+      if (_manualCheck) mainWindow?.webContents.send('update:error', { message: String(err?.message || err) });
+    });
+  } catch { autoUpdater = null; }
+}
+
 async function checkForUpdates(manual = false) {
+  _manualCheck = manual;
+  if (autoUpdater) {                              // Windows: sessiz indir/kur
+    try { await autoUpdater.checkForUpdates(); }
+    catch (err) { if (manual) mainWindow?.webContents.send('update:error', { message: String(err?.message || err) }); }
+    return;
+  }
+  // Mac/Linux: GitHub API ile bildir + tek tıkla indirme
   try {
     const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'CupertinoTerminal' },
@@ -280,7 +317,7 @@ async function checkForUpdates(manual = false) {
     const latest = String(rel.tag_name || '').replace(/^v/, '');
     const current = app.getVersion();
     if (latest && _cmpVer(latest, current) > 0) {
-      const ext = process.platform === 'darwin' ? '.dmg' : '.exe';
+      const ext = process.platform === 'darwin' ? '.dmg' : '.AppImage';
       const asset = (rel.assets || []).find((a) => a.name.toLowerCase().endsWith(ext));
       mainWindow?.webContents.send('update:available', {
         version: latest,
@@ -294,6 +331,10 @@ async function checkForUpdates(manual = false) {
   }
 }
 ipcMain.on('update:check', () => checkForUpdates(true));
+// Windows: indirilen güncellemeyi kur ve yeniden başlat (sessiz + kurulum sonrası çalıştır)
+ipcMain.on('update:install', () => {
+  if (autoUpdater) { try { autoUpdater.quitAndInstall(true, true); } catch { /* yoksay */ } }
+});
 
 // ---- NatureCo Hesabı (SSO) — CLI ile aynı ~/.natureco/auth.json oturumunu paylaşır ----
 const ncAccount = require('./natureco-account');
