@@ -48,6 +48,36 @@ const ANSI_MAC = {
 // bgRgb + bgAlpha: zemin rengi ve profilin VARSAYILAN opakligi (macOS Terminal'deki
 // profil "Opacity" ayari gibi kullanici kaydiriciyla ezebilir; Otomatik = bgAlpha).
 const THEMES = {
+  // NatureCo marka teması — natureco.me landing paletinden esinlenildi
+  // (koyu yeşil-uzay zemin, zümrüt + turkuaz, altın/gül/indigo aksanlar).
+  natureco: {
+    name: 'NatureCo',
+    bgRgb: '6, 18, 12', bgAlpha: 0.9,
+    light: false,
+    theme: {
+      background: '#00000000',
+      foreground: '#e6f0ea',
+      cursor: '#34d399',
+      cursorAccent: '#06120c',
+      selectionBackground: 'rgba(52, 211, 153, 0.26)',
+      black: '#0e2318',
+      red: '#fb7185',
+      green: '#34d399',
+      yellow: '#fcd34d',
+      blue: '#818cf8',
+      magenta: '#f472b6',
+      cyan: '#22d3ee',
+      white: '#e6f0ea',
+      brightBlack: '#4b6358',
+      brightRed: '#fda4af',
+      brightGreen: '#6ee7b7',
+      brightYellow: '#fde68a',
+      brightBlue: '#a5b4fc',
+      brightMagenta: '#f9a8d4',
+      brightCyan: '#67e8f9',
+      brightWhite: '#f0f7f3',
+    },
+  },
   pro: {
     name: 'Pro',
     bgRgb: '30, 30, 30', bgAlpha: 0.82,
@@ -401,7 +431,7 @@ function applyLanguage() {
 
 // ---- Ayarlar (macOS Terminal Settings muadili; electron-store'da kalici) ----
 const DEFAULT_SETTINGS = {
-  profile: 'pro',
+  profile: 'natureco',
   fontSize: 13,        // macOS Terminal varsayilanina yakin
   cursorStyle: 'block', // macOS varsayilani
   cursorBlink: false,   // macOS varsayilani: yanip SONMEZ

@@ -603,8 +603,8 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   z-index: 2;
   transition: background 140ms ease, color 140ms ease;
 }
-#btn-zerolink:hover { background: var(--tab-active-bg); color: #5ac8fa; }
-#btn-zerolink.zl-active { color: #5ac8fa; }
+#btn-zerolink:hover { background: var(--tab-active-bg); color: #22d3ee; }
+#btn-zerolink.zl-active { color: #22d3ee; }
 
 /* Overlay zemin */
 #zl-overlay {
@@ -648,7 +648,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 }
 .zl-logo {
   font-size: 18px;
-  color: #5ac8fa;
+  color: #22d3ee;
   line-height: 1;
 }
 #zl-title {
@@ -657,7 +657,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   letter-spacing: 0.02em;
   flex: 1;
   /* "ZeroLink" gradyan efekti */
-  background: linear-gradient(90deg, #5ac8fa, #bf68d9);
+  background: linear-gradient(90deg, #34d399, #22d3ee);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -741,7 +741,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #5ac8fa;
+  color: #22d3ee;
 }
 .zl-code-text {
   font-family: var(--font-mono);
@@ -757,7 +757,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   background: rgba(90, 200, 250, 0.12);
   border: 1px solid rgba(90, 200, 250, 0.25);
   border-radius: 6px;
-  color: #5ac8fa;
+  color: #22d3ee;
   font-size: 11px;
   padding: 4px 10px;
   cursor: pointer;
@@ -817,7 +817,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 .zl-primary-btn {
   width: 100%;
   padding: 10px;
-  background: #5ac8fa;
+  background: #22d3ee;
   border: none;
   border-radius: 8px;
   color: #000;
@@ -868,7 +868,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
   width: 32px;
   height: 32px;
   border: 3px solid rgba(90, 200, 250, 0.18);
-  border-top-color: #5ac8fa;
+  border-top-color: #22d3ee;
   border-radius: 50%;
   animation: zl-spin 700ms linear infinite;
   margin: 12px auto 8px;
@@ -918,7 +918,7 @@ body.light-theme .xterm .xterm-viewport.scrolling::-webkit-scrollbar-thumb:hover
 .zl-tool-btn {
   -webkit-app-region: no-drag;
   background: rgba(90,200,250,0.14);
-  color: #5ac8fa;
+  color: #22d3ee;
   border: 1px solid rgba(90,200,250,0.30);
   border-radius: 7px;
   padding: 6px 12px;
