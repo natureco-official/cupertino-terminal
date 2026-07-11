@@ -196,6 +196,9 @@ function handleDeepLink(url) {
       launchCwd = cwd;
     }
   } catch (_) { /* sessiz */ }
+  // App henüz ready değilse createWindow'u çağırma (screen modülü patlar)
+  // whenReady.then(createWindow) zaten arkada çalışıyor
+  if (!app.isReady()) return;
   // Pencere yoksa ac, varsa odaklan
   if (!mainWindow) {
     createWindow();
@@ -219,6 +222,7 @@ app.on('open-file', (event, filePath) => {
   if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
     launchCwd = filePath;
   }
+  if (!app.isReady()) return;
   if (!mainWindow) {
     createWindow();
   } else {
