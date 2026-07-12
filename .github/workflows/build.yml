@@ -24,13 +24,13 @@ jobs:
               dist/*.exe
               dist/latest.yml
               dist/*.blockmap
-          - os: macos-13
+          - os: macos-15-intel
             command: npm run dist -- --mac --x64 --publish never
             pattern: |
               dist/*.dmg
               dist/latest-mac.yml
               dist/*.blockmap
-          - os: macos-14
+          - os: macos-15
             command: npm run dist -- --mac --arm64 --publish never
             pattern: |
               dist/*.dmg
