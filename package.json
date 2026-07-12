@@ -1,7 +1,7 @@
 {
   "name": "cupertino-terminal",
   "productName": "Cupertino Terminal",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
   "author": "",
@@ -20,7 +20,10 @@
   ],
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && npm test",
+    "smoke:native": "electron scripts/smoke-native.js"
   },
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
@@ -80,13 +83,9 @@
             },
             "NSMessage": "openFile",
             "NSPortName": "Cupertino Terminal",
-            "NSRequiredContext": {
-              "NSApplicationIdentifier": "com.cupertinoterminal.app"
-            },
             "NSSendTypes": [
-              "public.folder"
-            ],
-            "NSFilePath": "/"
+              "public.file-url"
+            ]
           }
         ]
       }
@@ -96,6 +95,7 @@
       "icon": "build/icon.png"
     },
     "nsis": {
+      "include": "build/installer.nsh",
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": false,

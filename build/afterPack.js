@@ -32,6 +32,6 @@ exports.default = async function afterPack(context) {
     console.log('[afterPack] ad-hoc imzalama tamam.');
   } catch (err) {
     // İmzalama başarısızsa build'i kırma (ör. macOS dışı runner) — sadece uyar.
-    console.warn('[afterPack] ad-hoc imzalama atlandı/başarısız:', err.message);
+    throw new Error(`[afterPack] ad-hoc imzalama başarısız: ${err.message}`);
   }
 };

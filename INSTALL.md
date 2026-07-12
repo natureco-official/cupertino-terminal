@@ -1,10 +1,10 @@
 # Cupertino Terminal — Kurulum Kılavuzu
 
 En güncel installer'lar her zaman burada:
-**https://github.com/Gencayolgun/cupertino-terminal/releases/latest**
+**https://github.com/natureco-official/cupertino-terminal/releases/latest**
 
 - **Windows** → `Cupertino.Terminal.Setup.<sürüm>.exe`
-- **macOS** (Apple Silicon) → `Cupertino.Terminal-<sürüm>-arm64.dmg`
+- **macOS** → mimarinize uygun `arm64.dmg` veya `x64.dmg`
 
 Kurulumdan sonra uygulama şuralara yerleşir (masaüstünde **kalmaz**):
 | Platform | Kurulum yeri | Kısayol |
@@ -53,7 +53,7 @@ Remove-Item $out -Force
 
 ### macOS (bash/zsh)
 ```bash
-repo="Gencayolgun/cupertino-terminal"
+repo="natureco-official/cupertino-terminal"
 url=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" \
       | grep -o '"browser_download_url": *"[^"]*\.dmg"' | head -1 | cut -d'"' -f4)
 tmp=$(mktemp -d); dmg="$tmp/cupertino.dmg"
@@ -76,7 +76,7 @@ Agent script'leri zaten her zaman **en güncel** sürümü çeker.
 
 ## Notlar
 - İmzasız derlemeler (kod imzalama sertifikası yok) → ilk açılışta işletim sistemi uyarır; yukarıdaki adımlar bunu geçer.
-- macOS `.dmg` şu an yalnız **Apple Silicon (arm64)**. Intel Mac için x64 sürüm gerekirse eklenebilir.
+- macOS sürümleri Apple Silicon (`arm64`) ve Intel (`x64`) için ayrı üretilir.
 
 ---
 

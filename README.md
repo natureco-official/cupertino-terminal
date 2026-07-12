@@ -156,7 +156,9 @@ Windows interop works out of the box: call Windows programs from WSL by adding `
 | Tab title shows only `~` | Make sure both `ZSH_THEME_TERM_TITLE_IDLE` and `ZSH_THEME_TERM_TAB_TITLE_IDLE` are set (Step 5). |
 | Blurred glass option is greyed out | Your Windows version is older than 11 22H2 — use the Clear mode instead. |
 
-## Optional: "Open in Cupertino Terminal" in Explorer's right-click menu
+## "Open in Cupertino Terminal" in Explorer's right-click menu
+
+The Windows installer adds this entry automatically for folders and folder backgrounds and removes it on uninstall. The commands below are only needed when running from source without installing.
 
 Run in PowerShell (no admin needed — current user only). Replace `C:\path\to\cupertino-terminal` with your actual location:
 

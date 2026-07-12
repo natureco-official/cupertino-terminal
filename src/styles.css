@@ -100,6 +100,7 @@ html:has(body.maximized) { border-radius: 0; }
   -webkit-app-region: no-drag;
   z-index: 2;
 }
+body.platform-mac #traffic-lights { visibility: hidden; width: 54px; }
 
 .tl {
   width: 12px;

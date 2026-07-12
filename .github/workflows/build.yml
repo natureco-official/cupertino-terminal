@@ -19,11 +19,19 @@ jobs:
         include:
           # electron-updater icin latest.yml + .blockmap da Release'e yuklenmeli
           - os: windows-latest
+            command: npm run dist -- --publish never
             pattern: |
               dist/*.exe
               dist/latest.yml
               dist/*.blockmap
-          - os: macos-latest
+          - os: macos-13
+            command: npm run dist -- --mac --x64 --publish never
+            pattern: |
+              dist/*.dmg
+              dist/latest-mac.yml
+              dist/*.blockmap
+          - os: macos-14
+            command: npm run dist -- --mac --arm64 --publish never
             pattern: |
               dist/*.dmg
               dist/latest-mac.yml
@@ -40,10 +48,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify JavaScript and native terminal modules
+        run: npm run check && npm run smoke:native
+
       - name: Build installer (electron-builder)
         # --publish never: electron-builder yalnizca derlesin; yuklemeyi asagidaki
         # softprops adimi (Release'e ekleme) yapar.
-        run: npm run dist -- --publish never
+        run: ${{ matrix.command }}
         env:
           # electron-builder'ın kod imzalamayı atlaması için (imzasız derleme)
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

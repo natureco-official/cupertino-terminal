@@ -521,6 +521,10 @@ document.getElementById('btn-min').addEventListener('click', () => window.termAP
 document.getElementById('btn-max').addEventListener('click', () => window.termAPI.maximize());
 document.getElementById('btn-new-tab').addEventListener('click', () => createTab());
 document.getElementById('btn-settings').addEventListener('click', () => toggleSettings());
+window.termAPI.onOpenDirectory((cwd) => createTab('default', cwd));
+window.termAPI.onNewTab(() => createTab());
+window.termAPI.onCloseTab(() => { if (activeTabId) closeTab(activeTabId); });
+window.termAPI.onShowSettings(() => openSettings());
 document.getElementById('btn-account')?.addEventListener('click', () => {
   if (overlayEl.hidden) openSettings();
   document.getElementById('nc-account-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -577,7 +581,7 @@ function cleanTitle(raw) {
   return t;
 }
 
-async function createTab(profileKey = 'default') {
+async function createTab(profileKey = 'default', cwd = null) {
   const tabId = `tab-${++tabCounter}`;
 
   // ---- Sekme baslik elementi (macOS: kapat butonu SOLDA, hover'da belirir) ----
@@ -725,7 +729,7 @@ async function createTab(profileKey = 'default') {
   try {
     // Gercek boyutla spawn et — yoksa kabuk acilis banner'ini 80 sutuna gore
     // basar ve genis pencerede kirik gorunur.
-    shellInfo = await window.termAPI.createPty(tabId, profileKey, term.cols, term.rows);
+    shellInfo = await window.termAPI.createPty(tabId, profileKey, term.cols, term.rows, cwd);
   } catch (err) {
     term.writeln(`\r\n\x1b[31m${t('shellFail')(err.message)}\x1b[0m`);
     term.writeln(`\x1b[90m${t('wslHint')}\x1b[0m`);
@@ -1523,6 +1527,10 @@ const _ncRefreshAccount = (() => {
 
 // Gomulu fontu xterm ilk olcumden ONCE yukle (yoksa glyph metrigi kayar), sonra ilk sekme.
 async function boot() {
+  try {
+    const caps = await window.termAPI.getCaps();
+    document.body.classList.toggle('platform-mac', caps?.platform === 'darwin');
+  } catch (_) { /* platform sinifi zorunlu degil */ }
   try {
     const saved = await window.termAPI.getSettings();
     settings = { ...DEFAULT_SETTINGS, ...saved };

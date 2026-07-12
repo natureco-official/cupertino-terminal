@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('termAPI', {
   getCaps: () => ipcRenderer.invoke('sys:caps'),
 
   // PTY yasam dongusu
-  createPty: (tabId, profileKey, cols, rows) => ipcRenderer.invoke('pty:create', { tabId, profileKey, cols, rows }),
+  createPty: (tabId, profileKey, cols, rows, cwd) => ipcRenderer.invoke('pty:create', { tabId, profileKey, cols, rows, cwd }),
   writePty: (tabId, data) => ipcRenderer.send('pty:write', { tabId, data }),
   resizePty: (tabId, cols, rows) => ipcRenderer.send('pty:resize', { tabId, cols, rows }),
   killPty: (tabId) => ipcRenderer.send('pty:kill', { tabId }),
@@ -70,6 +70,10 @@ contextBridge.exposeInMainWorld('termAPI', {
     ipcRenderer.on('window:maximized', listener);
     return () => ipcRenderer.removeListener('window:maximized', listener);
   },
+  onOpenDirectory: (callback) => { const l = (_, cwd) => callback(cwd); ipcRenderer.on('app:open-directory', l); return () => ipcRenderer.removeListener('app:open-directory', l); },
+  onNewTab: (callback) => { const l = () => callback(); ipcRenderer.on('app:new-tab', l); return () => ipcRenderer.removeListener('app:new-tab', l); },
+  onCloseTab: (callback) => { const l = () => callback(); ipcRenderer.on('app:close-tab', l); return () => ipcRenderer.removeListener('app:close-tab', l); },
+  onShowSettings: (callback) => { const l = () => callback(); ipcRenderer.on('app:show-settings', l); return () => ipcRenderer.removeListener('app:show-settings', l); },
 
   // ── ZeroLink ──────────────────────────────────────────────────────────────
   // HOST: bu terminali paylas → ZeroLink kodu uret

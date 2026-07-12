@@ -156,7 +156,9 @@ Windows birlikte çalışabilirliği hazır gelir: WSL'den Windows programların
 | Sekme başlığı yalnızca `~` gösteriyor | Adım 5'teki `ZSH_THEME_TERM_TITLE_IDLE` ve `ZSH_THEME_TERM_TAB_TITLE_IDLE` satırlarının ikisinin de ekli olduğundan emin olun. |
 | Buğulu cam seçeneği soluk/devre dışı | Windows sürümünüz 11 22H2'den eski — Berrak kipi kullanın. |
 
-## İsteğe bağlı: Gezgin sağ-tık menüsüne "Cupertino Terminal'de Aç"
+## Gezgin sağ-tık menüsüne "Cupertino Terminal'de Aç"
+
+Windows kurucusu bu girdiyi klasörler ve klasör arka planları için otomatik ekler; kaldırma sırasında da temizler. Aşağıdaki komutlar yalnızca kurulum yapmadan kaynak koddan çalıştırırken gerekir.
 
 PowerShell'de çalıştırın (yönetici gerekmez — yalnız geçerli kullanıcı). `C:\yol\cupertino-terminal` kısmını gerçek konumla değiştirin:
 

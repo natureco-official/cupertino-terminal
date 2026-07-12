@@ -16,16 +16,12 @@ try {
 const { execSync } = require('child_process');
 const fs = require('fs');
 const store = new Store();
+const { validDirectory, directoryFromDeepLink, directoryFromArgs } = require('./path-utils');
 
 // Baslangic calisma dizini: Explorer sag-tik "Cupertino Terminal'de Ac" komut satirinda
 // klasor yolu gecirir (argv: [electron.exe, uygulamaDizini, KLASOR]). Ilk iki arguman
 // atlanir; gecerli bir dizinse kabuklar orada acilir, yoksa ev dizini.
-let launchCwd = null;
-for (const a of process.argv.slice(2)) {
-  try {
-    if (a && !a.startsWith('-') && fs.statSync(a).isDirectory()) { launchCwd = a; break; }
-  } catch (_) { /* dizin degil, atla */ }
-}
+let launchCwd = directoryFromArgs(process.argv, process.defaultApp);
 
 // Uygulama adi (menü çubuğu, Dock, bildirimler) — yoksa Electron "Electron" gösterir
 app.setName('Cupertino Terminal');
@@ -143,9 +139,9 @@ function createWindow() {
     minHeight: 250,
     ...(IS_WIN ? { icon: path.join(__dirname, 'icon.ico') } : {}),
     // macOS Terminal'deki gibi: baslik cubugu gizli, ozel traffic-light butonlari
-    titleBarStyle: 'hidden',
+    titleBarStyle: IS_MAC ? 'hiddenInset' : 'hidden',
     ...(IS_MAC ? { trafficLightPosition: { x: 12, y: 12 } } : {}),
-    frame: false,
+    frame: IS_MAC,
     // SEFFAF pencere zemini SART: opak renk verilirse blur hic gorunmez. Gercek zemini CSS --bg verir.
     backgroundColor: glassMode === 'opaque' ? '#1e1e1e' : '#00000000',
     ...glassOpts,
@@ -158,7 +154,6 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
-  Menu.setApplicationMenu(null);
 
   // Açılıştan birkaç sn sonra sessizce güncelleme denetle (yeni sürüm varsa bildirir)
   mainWindow.webContents.once('did-finish-load', () => setTimeout(() => checkForUpdates(false), 4000));
@@ -185,16 +180,34 @@ function createWindow() {
   });
 }
 
+function sendRenderer(channel, payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const send = () => mainWindow?.webContents.send(channel, payload);
+  if (mainWindow.webContents.isLoadingMainFrame()) mainWindow.webContents.once('did-finish-load', send);
+  else send();
+}
+
+function openDirectory(directory) {
+  const cwd = validDirectory(directory);
+  if (!cwd) return false;
+  launchCwd = cwd;
+  if (!app.isReady()) return true;
+  if (!mainWindow) createWindow();
+  else {
+    mainWindow.show();
+    mainWindow.focus();
+    sendRenderer('app:open-directory', cwd);
+  }
+  return true;
+}
+
 // Derin baglanti / URL scheme istegini coz (terminal:// veya shell://)
 // Format: terminal:///path/to/dir  veya  shell:///path
 function handleDeepLink(url) {
   try {
     // URL'den yolu cikar: terminal:///Users/gencay/Project → /Users/gencay/Project
-    const parsed = new URL(url);
-    const cwd = decodeURIComponent(parsed.pathname);
-    if (cwd && fs.existsSync(cwd) && fs.statSync(cwd).isDirectory()) {
-      launchCwd = cwd;
-    }
+    const cwd = directoryFromDeepLink(url);
+    if (openDirectory(cwd)) return;
   } catch (_) { /* sessiz */ }
   // App henüz ready değilse createWindow'u çağırma (screen modülü patlar)
   // whenReady.then(createWindow) zaten arkada çalışıyor
@@ -208,7 +221,9 @@ function handleDeepLink(url) {
   }
 }
 
-app.whenReady().then(createWindow);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+else app.whenReady().then(createWindow);
 
 // macOS: URL scheme ile acilma (terminal://...)
 app.on('open-url', (event, url) => {
@@ -219,18 +234,48 @@ app.on('open-url', (event, url) => {
 // macOS: Finder "Birlikte Aç" / NSServices (klasore terminal ac)
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-    launchCwd = filePath;
-  }
+  const cwd = validDirectory(filePath);
+  if (cwd && openDirectory(cwd)) return;
   if (!app.isReady()) return;
   if (!mainWindow) {
     createWindow();
   } else {
     mainWindow.show();
     mainWindow.focus();
-    mainWindow.webContents.send('navigate:dir', filePath);
   }
 });
+
+app.on('second-instance', (event, argv) => {
+  const deepLink = argv.find((arg) => /^(terminal|shell):/i.test(arg || ''));
+  if (deepLink) handleDeepLink(deepLink);
+  else {
+    const cwd = directoryFromArgs(argv, false);
+    if (cwd) openDirectory(cwd);
+  }
+  mainWindow?.show();
+  mainWindow?.focus();
+});
+
+function installApplicationMenu() {
+  if (!IS_MAC) { Menu.setApplicationMenu(null); return; }
+  const send = (channel) => sendRenderer(channel);
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, submenu: [
+      { role: 'about' }, { type: 'separator' },
+      { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => send('app:show-settings') },
+      { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
+    ] },
+    { label: 'File', submenu: [
+      { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => send('app:new-tab') },
+      { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => send('app:close-tab') },
+      { type: 'separator' }, { role: 'close' },
+    ] },
+    { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }, { role: 'help', submenu: [] },
+  ]));
+}
+
+app.whenReady().then(installApplicationMenu);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -359,20 +404,22 @@ ipcMain.handle('nc:account:password', async (e, { email, password }) => {
 ipcMain.on('nc:account:logout', () => ncAccount.logout());
 
 // ---- IPC: terminal sekmesi olustur ----
-ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows }) => {
+ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows, cwd: requestedCwd }) => {
   if (!pty) throw new Error('node-pty mevcut degil');
 
   const profile = shellProfiles[profileKey] || getDefaultShell();
+  const cwd = validDirectory(requestedCwd) || launchCwd || os.homedir();
+  launchCwd = null;
 
   // WSL'de calisma dizinini --cd belirler (Windows yolu kabul eder); digerlerinde cwd.
   let args = profile.args;
-  if (launchCwd && profile.command === 'wsl.exe') args = ['--cd', launchCwd];
+  if (cwd && profile.command === 'wsl.exe') args = ['--cd', cwd];
 
   const proc = pty.spawn(profile.command, args, {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 30,
-    cwd: launchCwd || os.homedir(),
+    cwd,
     env: process.env,
   });
 
