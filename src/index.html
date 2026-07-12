@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Terminal</title>
-  <link rel="stylesheet" href="../node_modules/xterm/css/xterm.css" />
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="single-tab">
@@ -25,6 +26,22 @@
       </svg>
       <span class="acc-dot" aria-hidden="true"></span>
     </button>
+  </div>
+
+  <div id="search-bar" hidden>
+    <input id="search-input" type="search" placeholder="Find in terminal" autocomplete="off" spellcheck="false" />
+    <span id="search-status" aria-live="polite"></span>
+    <button id="search-prev" title="Previous match">↑</button>
+    <button id="search-next" title="Next match">↓</button>
+    <button id="search-close" title="Close">×</button>
+  </div>
+
+  <div id="command-palette-overlay" hidden role="dialog" aria-modal="true" aria-label="Command Palette">
+    <div id="command-palette">
+      <input id="command-palette-input" type="search" placeholder="Type a command…" autocomplete="off" spellcheck="false" />
+      <div id="command-palette-list" role="listbox"></div>
+      <div id="command-palette-empty" hidden>No matching commands</div>
+    </div>
   </div>
 
   <!-- Tab bar: separate row like macOS; only visible with 2+ tabs -->

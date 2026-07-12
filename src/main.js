@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, screen, clipboard, dialog, shell } = 
 const path = require('path');
 const os = require('os');
 const Store = require('electron-store');
+const IS_SMOKE_TEST = process.argv.includes('--smoke-test');
 
 // PTY motoru: @homebridge/node-pty-prebuilt-multiarch — prebuilt N-API binary'leri ile
 // gelir, yani Windows'ta Python/VS Build Tools ile DERLEME GEREKTIRMEZ ve ayni binary hem
@@ -15,7 +16,15 @@ try {
 
 const { execSync } = require('child_process');
 const fs = require('fs');
-const store = new Store();
+const store = new Store(IS_SMOKE_TEST ? { name: 'cupertino-smoke-test' } : undefined);
+if (IS_SMOKE_TEST) {
+  store.clear();
+  store.set('session', {
+    tabs: [{ profileKey: 'default', cwd: os.homedir() }, { profileKey: 'default', cwd: os.homedir() }],
+    activeIndex: 1,
+  });
+}
+const APP_STARTED_AT = Date.now();
 const { validDirectory, directoryFromDeepLink, directoryFromArgs } = require('./path-utils');
 
 // Baslangic calisma dizini: Explorer sag-tik "Cupertino Terminal'de Ac" komut satirinda
@@ -104,6 +113,8 @@ function getDefaultShell() {
 }
 
 let mainWindow;
+let allowWindowClose = false;
+let pendingQuit = false;
 const ptyProcesses = new Map(); // windowId/tabId -> pty process
 
 // Bugulu cam: Windows'ta acrylic (DWM, yalnizca Win11 22H2+ / build 22621),
@@ -116,6 +127,10 @@ const BLUR_SUPPORTED = ACRYLIC_SUPPORTED || IS_MAC; // renderer'a "Bugulu" secen
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  const savedBounds = store.get('windowBounds');
+  const boundsVisible = savedBounds && screen.getAllDisplays().some(({ workArea }) =>
+    savedBounds.x < workArea.x + workArea.width && savedBounds.x + savedBounds.width > workArea.x &&
+    savedBounds.y < workArea.y + workArea.height && savedBounds.y + savedBounds.height > workArea.y);
 
   // Cam efekti (ayarlardan): 'acrylic' = bugulu blur; 'clear' = kristal net saydamlik.
   // transparent:true pencere OLUSTURULURKEN verilmek zorunda → kip degisince yeniden baslatilir.
@@ -133,8 +148,10 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow({
-    width: Math.min(1100, width - 100),
-    height: Math.min(700, height - 100),
+    show: !IS_SMOKE_TEST,
+    width: boundsVisible ? savedBounds.width : Math.min(1100, width - 100),
+    height: boundsVisible ? savedBounds.height : Math.min(700, height - 100),
+    ...(boundsVisible ? { x: savedBounds.x, y: savedBounds.y } : {}),
     minWidth: 400,
     minHeight: 250,
     ...(IS_WIN ? { icon: path.join(__dirname, 'icon.ico') } : {}),
@@ -155,6 +172,59 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
+  if (IS_SMOKE_TEST) {
+    mainWindow.webContents.once('did-finish-load', async () => {
+      try {
+        const deadline = Date.now() + 8000;
+        let result;
+        do {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          result = await mainWindow.webContents.executeJavaScript(`(() => {
+            const viewport = document.querySelector('.xterm-viewport, .xterm-scrollable-element, .xterm-screen');
+            return {
+              xterm: !!document.querySelector('.xterm-screen'),
+              renderer: document.querySelector('.xterm-screen canvas') ? 'canvas' : 'dom',
+              cwdCount: [...document.querySelectorAll('.tab')].filter((tab) => tab.dataset.cwd).length,
+              tabCount: document.querySelectorAll('.tab').length,
+              viewportBackground: viewport ? getComputedStyle(viewport).backgroundColor : 'missing',
+              bodyBackground: getComputedStyle(document.body).backgroundColor,
+              title: document.title
+            };
+          })()`);
+        } while ((result.tabCount !== 2 || result.cwdCount !== 2) && Date.now() < deadline);
+        const uiChecks = await mainWindow.webContents.executeJavaScript(`(() => {
+          const target = document.activeElement || document.body;
+          target.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }));
+          const searchOpened = !document.getElementById('search-bar').hidden;
+          target.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, shiftKey: true, bubbles: true }));
+          return {
+            searchOpened,
+            paletteOpened: !document.getElementById('command-palette-overlay').hidden
+          };
+        })()`);
+        if (!result.xterm) throw new Error('xterm screen was not created');
+        if (!uiChecks.searchOpened) throw new Error('terminal search did not open');
+        if (!uiChecks.paletteOpened) throw new Error('command palette did not open');
+        if (result.cwdCount !== 2) throw new Error(`shell integration reported ${result.cwdCount}/2 working directories`);
+        if (result.tabCount !== 2) throw new Error(`session restore expected 2 tabs, got ${result.tabCount}`);
+        if (!/rgba\([^)]*,\s*0\)/.test(result.viewportBackground) && result.viewportBackground !== 'transparent') {
+          throw new Error(`terminal viewport is not transparent: ${result.viewportBackground}`);
+        }
+        const startupMs = Date.now() - APP_STARTED_AT;
+        if (startupMs > 10000) throw new Error(`startup exceeded 10000ms (${startupMs}ms)`);
+        console.log(`Application smoke test passed (${result.renderer} renderer, ${startupMs}ms)`);
+        store.clear();
+        app.exit(0);
+      } catch (error) {
+        console.error('Application smoke test failed:', error);
+        store.clear();
+        for (const proc of ptyProcesses.values()) { try { proc.kill(); } catch (_) {} }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        app.exit(1);
+      }
+    });
+  }
+
   // Açılıştan birkaç sn sonra sessizce güncelleme denetle (yeni sürüm varsa bildirir)
   mainWindow.webContents.once('did-finish-load', () => setTimeout(() => checkForUpdates(false), 4000));
 
@@ -165,6 +235,18 @@ function createWindow() {
   // Maximize durumu → renderer koseleri duzlestirir (tam ekranda yuvarlak kose olmaz)
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true));
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false));
+  if (store.get('windowMaximized', false)) mainWindow.maximize();
+  let saveBoundsTimer;
+  const saveWindowState = () => {
+    clearTimeout(saveBoundsTimer);
+    saveBoundsTimer = setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      store.set('windowMaximized', mainWindow.isMaximized());
+      if (!mainWindow.isMaximized() && !mainWindow.isFullScreen()) store.set('windowBounds', mainWindow.getBounds());
+    }, 250);
+  };
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
 
   // Renderer uyari/hatalarini ana surec log'una yansit (headless dogrulama icin faydali)
   mainWindow.webContents.on('console-message', (e, level, message, line, source) => {
@@ -172,12 +254,40 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
-    for (const proc of ptyProcesses.values()) {
-      try { proc.kill(); } catch (_) {}
+    if (!IS_SMOKE_TEST) {
+      for (const proc of ptyProcesses.values()) {
+        try { proc.kill(); } catch (_) {}
+      }
     }
     ptyProcesses.clear();
     mainWindow = null;
+    allowWindowClose = false;
   });
+  mainWindow.on('close', (event) => {
+    if (allowWindowClose) return;
+    event.preventDefault();
+    mainWindow?.webContents.send('window:close-requested');
+  });
+}
+
+function unpackedPath(relativePath) {
+  const source = path.join(__dirname, relativePath);
+  return app.isPackaged ? source.replace('app.asar', 'app.asar.unpacked') : source;
+}
+
+function shellLaunch(profile) {
+  const env = { ...process.env, TERM_PROGRAM: 'Cupertino_Terminal', TERM_PROGRAM_VERSION: app.getVersion() };
+  if (profile.command === 'zsh') {
+    env.CUPERTINO_ORIGINAL_ZDOTDIR = process.env.ZDOTDIR || os.homedir();
+    env.ZDOTDIR = unpackedPath('shell-integration');
+  }
+  if (profile.command === 'bash') {
+    return { args: ['--rcfile', unpackedPath('shell-integration/bash.bash'), '-i'], env };
+  }
+  if (profile.command === 'powershell.exe' || profile.command === 'pwsh.exe') {
+    return { args: ['-NoExit', '-File', unpackedPath('shell-integration/powershell.ps1')], env };
+  }
+  return { args: [...profile.args], env };
 }
 
 function sendRenderer(channel, payload) {
@@ -281,6 +391,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', (event) => {
+  if (allowWindowClose || !mainWindow) return;
+  event.preventDefault();
+  pendingQuit = true;
+  mainWindow.webContents.send('window:close-requested');
+});
+
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
@@ -291,7 +408,12 @@ ipcMain.on('window:maximize', () => {
   if (!mainWindow) return;
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
-ipcMain.on('window:close', () => mainWindow?.close());
+ipcMain.on('window:close', () => mainWindow?.webContents.send('window:close-requested'));
+ipcMain.on('window:close-confirmed', () => {
+  allowWindowClose = true;
+  if (pendingQuit) app.quit();
+  else mainWindow?.close();
+});
 
 // ---- IPC: pano (kopyala/yapistir) ----
 ipcMain.on('clipboard:write', (event, text) => {
@@ -412,7 +534,8 @@ ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows, cwd: reque
   launchCwd = null;
 
   // WSL'de calisma dizinini --cd belirler (Windows yolu kabul eder); digerlerinde cwd.
-  let args = profile.args;
+  const launch = shellLaunch(profile);
+  let args = launch.args;
   if (cwd && profile.command === 'wsl.exe') args = ['--cd', cwd];
 
   const proc = pty.spawn(profile.command, args, {
@@ -420,7 +543,7 @@ ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows, cwd: reque
     cols: cols || 80,
     rows: rows || 30,
     cwd,
-    env: process.env,
+    env: launch.env,
   });
 
   ptyProcesses.set(tabId, proc);
@@ -434,7 +557,7 @@ ipcMain.handle('pty:create', (event, { tabId, profileKey, cols, rows, cwd: reque
     ptyProcesses.delete(tabId);
   });
 
-  return { pid: proc.pid, shellName: profile.name };
+  return { pid: proc.pid, shellName: profile.name, cwd };
 });
 
 ipcMain.on('pty:write', (event, { tabId, data }) => {
@@ -474,6 +597,15 @@ ipcMain.on('app:relaunch', () => {
 
 // ---- IPC: ayarlar (kalici — electron-store; macOS Terminal "Settings" muadili) ----
 ipcMain.handle('settings:get', () => store.get('settings', {}));
+ipcMain.handle('session:get', () => store.get('session', {}));
+ipcMain.on('session:set', (event, session) => {
+  if (session && typeof session === 'object') store.set('session', session);
+});
+ipcMain.handle('app:boot-context', () => {
+  const cwd = launchCwd;
+  launchCwd = null;
+  return { cwd };
+});
 ipcMain.on('settings:set', (event, settings) => {
   if (!settings || typeof settings !== 'object') return;
   store.set('settings', settings);

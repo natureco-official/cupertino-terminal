@@ -1,13 +1,15 @@
 // xterm 5.x UMD dosyalari — ESM named export YOK. Side-effect import ile calistirilip
 // global'lerden aliniyor (UMD wrapper window.Terminal/FitAddon/WebLinksAddon set eder).
-import '../node_modules/xterm/lib/xterm.js';
-import '../node_modules/xterm-addon-fit/lib/xterm-addon-fit.js';
-import '../node_modules/xterm-addon-web-links/lib/xterm-addon-web-links.js';
+import { Terminal } from '../node_modules/@xterm/xterm/lib/xterm.mjs';
+import { FitAddon } from '../node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
+import { WebLinksAddon } from '../node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs';
+import { WebglAddon } from '../node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs';
+import { SearchAddon } from '../node_modules/@xterm/addon-search/lib/addon-search.mjs';
+import { ShellState, parseOsc7 } from './shell-state.mjs';
+import { normalizeSession, serializeSession } from './session-state.mjs';
+import { filterCommands } from './command-palette.mjs';
 import './zerolink-cli.js'; // ZeroLinkCLI global'e yuklenir (window.ZeroLinkCLI)
 
-const Terminal = window.Terminal?.Terminal || window.Terminal;
-const FitAddon = window.FitAddon?.FitAddon || window.FitAddon;
-const WebLinksAddon = window.WebLinksAddon?.WebLinksAddon || window.WebLinksAddon;
 const ZeroLinkCLI = window.ZeroLinkCLI;
 
 // ── ZeroLink global durum (tum sekmeler arasi paylasilan) — tek kaynak of truth ──
@@ -261,6 +263,8 @@ const LANGS = {
     shellHint: 'Shell changes take effect in new tabs.',
     language: 'Language', uiLanguage: 'Interface language',
     shellFail: (m) => `Failed to start shell: ${m}`,
+    searchNoResult: 'No matches',
+    closeRunning: 'A command is still running. Close it anyway?',
     wslHint: 'Is WSL installed? You can install it with "wsl --install".',
     exited: (c) => `[process exited with code ${c}]`,
     // ZeroLink
@@ -326,6 +330,8 @@ const LANGS = {
     shellHint: 'Kabuk değişikliği yeni sekmelerde geçerli olur.',
     language: 'Dil', uiLanguage: 'Arayüz dili',
     shellFail: (m) => `Shell başlatılamadı: ${m}`,
+    searchNoResult: 'Eşleşme yok',
+    closeRunning: 'Bir komut hâlâ çalışıyor. Yine de kapatılsın mı?',
     wslHint: 'WSL kurulu mu? "wsl --install" ile kurabilirsiniz.',
     exited: (c) => `[süreç sonlandı, çıkış kodu: ${c}]`,
     // ZeroLink
@@ -473,12 +479,17 @@ const DEFAULT_SETTINGS = {
   shell: 'auto',
   opacity: null,        // null = profil varsayilani (Otomatik); 0-1 arasi kullanici degeri
   glass: 'acrylic',     // 'acrylic' = bugulu blur; 'clear' = kristal net (pencere yeniden olusur)
+  gpuRenderer: false,
   lang: null,           // null = ilk acilista sistem dilinden sec (tr → Turkce, digerleri → Ingilizce)
 };
 let settings = { ...DEFAULT_SETTINGS };
 
 function currentTheme() {
   return THEMES[settings.profile] || THEMES.pro;
+}
+
+function terminalTheme() {
+  return { ...currentTheme().theme, background: 'rgba(0, 0, 0, 0)' };
 }
 
 // Etkin opaklik: kullanici kaydiriciyi kullandiysa onun degeri, yoksa profil varsayilani
@@ -494,7 +505,7 @@ function applySettings({ save = true } = {}) {
   document.body.classList.toggle('light-theme', !!th.light);
 
   for (const t of tabs.values()) {
-    t.term.options.theme = th.theme;
+    t.term.options.theme = terminalTheme();
     t.term.options.fontSize = settings.fontSize;
     t.term.options.cursorStyle = settings.cursorStyle;
     t.term.options.cursorBlink = settings.cursorBlink;
@@ -511,18 +522,169 @@ const FONT_FAMILY = "'JetBrains Mono', 'SF Mono', 'Menlo', 'Cascadia Code', Cons
 let tabCounter = 0;
 let activeTabId = null;
 const tabs = new Map(); // tabId -> { term, fitAddon, unsubData, unsubExit, tabEl, paneEl, title, shellName }
+let sessionSaveTimer = null;
+let restoringSession = false;
+
+function scheduleSessionSave() {
+  if (restoringSession) return;
+  clearTimeout(sessionSaveTimer);
+  sessionSaveTimer = setTimeout(() => window.termAPI.setSession(serializeSession(tabs, activeTabId)), 200);
+}
 
 const tabbarEl = document.getElementById('tabbar');
 const panesEl = document.getElementById('panes');
 const windowTitleEl = document.getElementById('window-title');
+const searchBarEl = document.getElementById('search-bar');
+const searchInputEl = document.getElementById('search-input');
+const searchStatusEl = document.getElementById('search-status');
+const commandPaletteOverlayEl = document.getElementById('command-palette-overlay');
+const commandPaletteInputEl = document.getElementById('command-palette-input');
+const commandPaletteListEl = document.getElementById('command-palette-list');
+const commandPaletteEmptyEl = document.getElementById('command-palette-empty');
+let paletteCommands = [];
+let paletteSelection = 0;
+
+const paletteText = () => settings.lang === 'tr' ? {
+  placeholder: 'Bir komut yazın…', empty: 'Eşleşen komut yok', newTab: 'Yeni sekme', closeTab: 'Sekmeyi kapat',
+  find: 'Terminalde ara', settings: 'Ayarları aç', zeroLink: 'ZeroLink panelini aç', clear: 'Terminali temizle',
+  theme: 'Tema', shell: 'Kabuk',
+} : {
+  placeholder: 'Type a command…', empty: 'No matching commands', newTab: 'New tab', closeTab: 'Close tab',
+  find: 'Find in terminal', settings: 'Open settings', zeroLink: 'Open ZeroLink', clear: 'Clear terminal',
+  theme: 'Theme', shell: 'Shell',
+};
+
+async function allCommands() {
+  const P = paletteText();
+  const base = [
+    { id: 'new-tab', label: P.newTab, shortcut: 'Ctrl/⌘ T', keywords: 'tab sekme', run: () => createTabAtActiveCwd() },
+    { id: 'close-tab', label: P.closeTab, shortcut: 'Ctrl/⌘ W', keywords: 'close kapat', run: () => activeTabId && closeTab(activeTabId) },
+    { id: 'find', label: P.find, shortcut: 'Ctrl/⌘ F', keywords: 'search ara', run: openSearch },
+    { id: 'settings', label: P.settings, shortcut: 'Ctrl/⌘ ,', keywords: 'preferences ayarlar', run: openSettings },
+    { id: 'zerolink', label: P.zeroLink, shortcut: 'Ctrl/⌘ L', keywords: 'remote share uzak paylaş', run: toggleZeroLink },
+    { id: 'clear', label: P.clear, keywords: 'clear temizle', run: () => tabs.get(activeTabId)?.term.clear() },
+  ];
+  for (const key of Object.keys(THEMES)) {
+    base.push({ id: `theme-${key}`, label: `${P.theme}: ${key}`, keywords: 'appearance color görünüm renk', run: () => { settings.profile = key; applySettings(); syncSettingsUI(); } });
+  }
+  try {
+    const shells = await window.termAPI.listShells();
+    for (const [key, shell] of Object.entries(shells)) {
+      base.push({ id: `shell-${key}`, label: `${P.shell}: ${shell.name}`, keywords: 'terminal profile kabuk', run: () => createTabAtActiveCwd(key) });
+    }
+  } catch (_) { /* temel komutlar yine kullanilabilir */ }
+  return base;
+}
+
+function renderCommandPalette() {
+  const matches = filterCommands(paletteCommands, commandPaletteInputEl.value);
+  paletteSelection = Math.max(0, Math.min(paletteSelection, Math.max(0, matches.length - 1)));
+  commandPaletteListEl.replaceChildren();
+  commandPaletteEmptyEl.hidden = matches.length > 0;
+  matches.forEach((command, index) => {
+    const row = document.createElement('button');
+    row.className = 'command-palette-item';
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', String(index === paletteSelection));
+    row.classList.toggle('selected', index === paletteSelection);
+    row.innerHTML = `<span></span><kbd></kbd>`;
+    row.querySelector('span').textContent = command.label;
+    row.querySelector('kbd').textContent = command.shortcut || '';
+    row.addEventListener('mouseenter', () => {
+      paletteSelection = index;
+      for (const [itemIndex, item] of [...commandPaletteListEl.children].entries()) {
+        item.classList.toggle('selected', itemIndex === index);
+        item.setAttribute('aria-selected', String(itemIndex === index));
+      }
+    });
+    row.addEventListener('click', () => executePaletteCommand(command));
+    commandPaletteListEl.appendChild(row);
+  });
+}
+
+function executePaletteCommand(command) {
+  closeCommandPalette();
+  command?.run();
+}
+
+async function openCommandPalette() {
+  const P = paletteText();
+  commandPaletteInputEl.placeholder = P.placeholder;
+  commandPaletteEmptyEl.textContent = P.empty;
+  commandPaletteOverlayEl.hidden = false;
+  commandPaletteInputEl.value = '';
+  paletteSelection = 0;
+  paletteCommands = await allCommands();
+  renderCommandPalette();
+  commandPaletteInputEl.focus();
+}
+
+function closeCommandPalette() {
+  commandPaletteOverlayEl.hidden = true;
+  tabs.get(activeTabId)?.term.focus();
+}
+
+commandPaletteInputEl.addEventListener('input', () => { paletteSelection = 0; renderCommandPalette(); });
+commandPaletteInputEl.addEventListener('keydown', (event) => {
+  const matches = filterCommands(paletteCommands, commandPaletteInputEl.value);
+  if (event.key === 'Escape') { event.preventDefault(); closeCommandPalette(); }
+  else if (event.key === 'ArrowDown') { event.preventDefault(); paletteSelection = Math.min(matches.length - 1, paletteSelection + 1); renderCommandPalette(); }
+  else if (event.key === 'ArrowUp') { event.preventDefault(); paletteSelection = Math.max(0, paletteSelection - 1); renderCommandPalette(); }
+  else if (event.key === 'Enter') { event.preventDefault(); executePaletteCommand(matches[paletteSelection]); }
+});
+commandPaletteOverlayEl.addEventListener('mousedown', (event) => { if (event.target === commandPaletteOverlayEl) closeCommandPalette(); });
+
+function runSearch(direction = 'next', incremental = false) {
+  const rec = tabs.get(activeTabId);
+  const query = searchInputEl.value;
+  if (!rec || !query) { searchStatusEl.textContent = ''; return false; }
+  const options = {
+    incremental,
+    decorations: { matchBackground: '#f5c542', matchBorder: '#fff', matchOverviewRuler: '#f5c542', activeMatchBackground: '#ff8c00' },
+  };
+  const found = direction === 'previous'
+    ? rec.searchAddon.findPrevious(query, options)
+    : rec.searchAddon.findNext(query, options);
+  searchStatusEl.textContent = found ? '' : t('searchNoResult');
+  return found;
+}
+
+function openSearch() {
+  searchBarEl.hidden = false;
+  searchInputEl.focus();
+  searchInputEl.select();
+  if (searchInputEl.value) runSearch('next', true);
+}
+
+function closeSearch() {
+  searchBarEl.hidden = true;
+  searchStatusEl.textContent = '';
+  tabs.get(activeTabId)?.searchAddon.clearDecorations();
+  tabs.get(activeTabId)?.term.focus();
+}
+
+searchInputEl.addEventListener('input', () => runSearch('next', true));
+searchInputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  else if (e.key === 'Enter') { e.preventDefault(); runSearch(e.shiftKey ? 'previous' : 'next'); }
+});
+document.getElementById('search-prev').addEventListener('click', () => runSearch('previous'));
+document.getElementById('search-next').addEventListener('click', () => runSearch('next'));
+document.getElementById('search-close').addEventListener('click', closeSearch);
 
 document.getElementById('btn-close').addEventListener('click', () => window.termAPI.close());
+window.termAPI.onCloseRequested(() => {
+  const running = [...tabs.values()].some((tab) => tab.shellState?.running);
+  if (!running || window.confirm(t('closeRunning'))) window.termAPI.confirmClose();
+});
 document.getElementById('btn-min').addEventListener('click', () => window.termAPI.minimize());
 document.getElementById('btn-max').addEventListener('click', () => window.termAPI.maximize());
-document.getElementById('btn-new-tab').addEventListener('click', () => createTab());
+function activeCwd() { return tabs.get(activeTabId)?.shellState?.cwd || null; }
+function createTabAtActiveCwd(profileKey = 'default') { return createTab(profileKey, activeCwd()); }
+document.getElementById('btn-new-tab').addEventListener('click', () => createTabAtActiveCwd());
 document.getElementById('btn-settings').addEventListener('click', () => toggleSettings());
 window.termAPI.onOpenDirectory((cwd) => createTab('default', cwd));
-window.termAPI.onNewTab(() => createTab());
+window.termAPI.onNewTab(() => createTabAtActiveCwd());
 window.termAPI.onCloseTab(() => { if (activeTabId) closeTab(activeTabId); });
 window.termAPI.onShowSettings(() => openSettings());
 document.getElementById('btn-account')?.addEventListener('click', () => {
@@ -625,16 +787,32 @@ async function createTab(profileKey = 'default', cwd = null) {
     lineHeight: 1.15,
     cursorBlink: settings.cursorBlink,
     cursorStyle: settings.cursorStyle,
-    theme: currentTheme().theme,
+    theme: terminalTheme(),
     allowTransparency: true,
     scrollback: 5000,
     macOptionIsMeta: true,
   });
 
   const fitAddon = new FitAddon();
+  const searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);
+  term.loadAddon(searchAddon);
   term.loadAddon(new WebLinksAddon());
   term.open(xtermWrapper);
+  let webglAddon = null;
+  if (settings.gpuRenderer === true) {
+    try {
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        console.warn('WebGL context lost; falling back to DOM renderer.');
+        webglAddon?.dispose();
+        webglAddon = null;
+      });
+      term.loadAddon(webglAddon);
+    } catch (error) {
+      console.warn(`WebGL renderer unavailable; using DOM renderer: ${error.message}`);
+    }
+  }
   fitAddon.fit();
 
   // macOS overlay scrollbar davranisi: yalnizca KAYDIRIRKEN gorunur, sonra kaybolur
@@ -649,8 +827,25 @@ async function createTab(profileKey = 'default', cwd = null) {
   }
 
   // Kayit
-  const rec = { term, fitAddon, tabEl, paneEl, title: 'Terminal', shellName: 'Terminal' };
+  const rec = { term, fitAddon, searchAddon, webglAddon, tabEl, paneEl, title: 'Terminal', shellName: 'Terminal', profileKey, shellState: new ShellState() };
+  rec.shellState.cwdChanged(cwd);
   tabs.set(tabId, rec);
+
+  const updateShellState = (state) => {
+    tabEl.classList.toggle('command-running', state.running);
+    tabEl.classList.toggle('command-failed', !state.running && state.lastExitCode !== null && state.lastExitCode !== 0);
+    tabEl.dataset.cwd = state.cwd || '';
+    const duration = state.lastDurationMs === null ? '' : ` · ${(state.lastDurationMs / 1000).toFixed(1)}s`;
+    const exit = state.lastExitCode === null ? '' : ` · exit ${state.lastExitCode}`;
+    tabEl.title = `${state.cwd || rec.title}${exit}${duration}`;
+  };
+  term.parser.registerOscHandler(7, (data) => {
+    const cwdValue = parseOsc7(data, navigator.platform.startsWith('Win') ? 'win32' : 'posix');
+    if (cwdValue) updateShellState(rec.shellState.cwdChanged(cwdValue));
+    if (cwdValue) scheduleSessionSave();
+    return true;
+  });
+  term.parser.registerOscHandler(133, (data) => { updateShellState(rec.shellState.osc133(data)); return true; });
 
   // ---- Kabuk (shell) OSC baslik degisimi → sekme + pencere basligi (macOS gibi) ----
   term.onTitleChange((title) => setTabTitle(tabId, title));
@@ -673,8 +868,10 @@ async function createTab(profileKey = 'default', cwd = null) {
     if (mod && k === 'l' && !e.shiftKey) { toggleZeroLink(); return false; }
 
     if (mod) {
+      if (k === 'p' && e.shiftKey) { openCommandPalette(); return false; }
+      if (k === 'f' && !e.shiftKey) { openSearch(); return false; }
       // Yeni / kapat sekme
-      if (k === 't' && !e.shiftKey) { createTab(); return false; }
+      if (k === 't' && !e.shiftKey) { createTabAtActiveCwd(); return false; }
       if (k === 'w' && !e.shiftKey) { if (activeTabId) closeTab(activeTabId); return false; }
 
       // Ayarlar: Ctrl+, (macOS Cmd+, muadili)
@@ -737,6 +934,7 @@ async function createTab(profileKey = 'default', cwd = null) {
 
   if (shellInfo) {
     rec.shellName = shellInfo.shellName;
+    updateShellState(rec.shellState.cwdChanged(shellInfo.cwd));
     setTabTitle(tabId, shellInfo.shellName);
   }
 
@@ -750,6 +948,9 @@ async function createTab(profileKey = 'default', cwd = null) {
   rec.zlCli = zlCli;
 
   term.onData((data) => {
+    if ((data.includes('\r') || data.includes('\n')) && rec.shellState.atPrompt) {
+      updateShellState(rec.shellState.commandStarted());
+    }
     // Client modunda girdi uzak PTY'ye; degilse (intercept degilse) yerel PTY'ye
     const passThrough = zlCli.handleData(data);
     if (passThrough) window.termAPI.writePty(tabId, data);
@@ -779,6 +980,7 @@ async function createTab(profileKey = 'default', cwd = null) {
   resizeObserver.observe(paneEl);
 
   term.focus();
+  scheduleSessionSave();
 }
 
 function setTabTitle(tabId, rawTitle) {
@@ -828,11 +1030,13 @@ function activateTab(tabId) {
     t.term.focus();
   }
   updateWindowTitle();
+  scheduleSessionSave();
 }
 
 function closeTab(tabId) {
   const t = tabs.get(tabId);
   if (!t) return;
+  if (t.shellState?.running && !window.confirm((LANGS[settings.lang] || LANGS.en).closeRunning)) return;
 
   window.termAPI.killPty(tabId);
   t.unsubData?.();
@@ -853,6 +1057,7 @@ function closeTab(tabId) {
     }
   }
   updateTabBarVisibility();
+  scheduleSessionSave();
 }
 
 // ================= Ayarlar paneli =================
@@ -1025,9 +1230,15 @@ function buildSettingsUI() {
 // islenir ve olay window'a kadar kabarcaklanir (bubbling) — burada tekrar toggle
 // edersek panel acilip ANINDA kapanir. Bu yuzden xterm icinden gelen olayi atlariz.
 window.addEventListener('keydown', (e) => {
+  const fromTerminal = e.target && e.target.closest && e.target.closest('.xterm');
+  if (!fromTerminal && (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
+    e.preventDefault();
+    if (commandPaletteOverlayEl.hidden) openCommandPalette(); else closeCommandPalette();
+    return;
+  }
+  if (e.key === 'Escape' && !commandPaletteOverlayEl.hidden) { closeCommandPalette(); return; }
   if (e.key === 'Escape' && !overlayEl.hidden) { closeSettings(); return; }
   if (e.key === 'Escape' && !zlOverlayEl.hidden) { closeZeroLink(); return; }
-  const fromTerminal = e.target && e.target.closest && e.target.closest('.xterm');
   if (!fromTerminal && (e.ctrlKey || e.metaKey) && e.key === ',') {
     e.preventDefault();
     toggleSettings();
@@ -1556,6 +1767,24 @@ async function boot() {
     ]);
     await document.fonts.ready;
   } catch (_) { /* font yuklenemezse sistem mono'suna duser */ }
-  createTab();
+  let bootContext = {};
+  let session = { tabs: [], activeIndex: 0 };
+  try {
+    [bootContext, session] = await Promise.all([window.termAPI.getBootContext(), window.termAPI.getSession()]);
+    session = normalizeSession(session);
+  } catch (_) { /* bos oturumla devam */ }
+
+  if (bootContext?.cwd) {
+    await createTab('default', bootContext.cwd);
+  } else if (session.tabs.length) {
+    restoringSession = true;
+    for (const tab of session.tabs) await createTab(tab.profileKey, tab.cwd);
+    const restoredId = [...tabs.keys()][session.activeIndex];
+    if (restoredId) activateTab(restoredId);
+    restoringSession = false;
+    scheduleSessionSave();
+  } else {
+    await createTab();
+  }
 }
 boot();

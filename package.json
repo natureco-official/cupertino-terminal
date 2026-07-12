@@ -1,7 +1,7 @@
 {
   "name": "cupertino-terminal",
   "productName": "Cupertino Terminal",
-  "version": "0.2.12",
+  "version": "0.3.0",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
   "author": "",
@@ -23,21 +23,24 @@
     "dist": "electron-builder",
     "test": "node --test test/*.test.js",
     "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && npm test",
-    "smoke:native": "electron scripts/smoke-native.js"
+    "smoke:native": "electron scripts/smoke-native.js",
+    "smoke:app": "electron . --smoke-test",
+    "perf:pty": "electron scripts/benchmark-pty.js"
   },
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.9",
-    "node-datachannel": "^0.12.0",
-    "xterm": "^5.3.0",
-    "xterm-addon-fit": "^0.8.0",
-    "xterm-addon-web-links": "^0.9.0"
+    "node-datachannel": "^0.12.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.6.0",
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.cupertinoterminal.app",
@@ -53,7 +56,8 @@
     ],
     "asarUnpack": [
       "node_modules/@homebridge/node-pty-prebuilt-multiarch/**",
-      "node_modules/node-datachannel/**"
+      "node_modules/node-datachannel/**",
+      "src/shell-integration/**"
     ],
     "files": [
       "src/**/*",

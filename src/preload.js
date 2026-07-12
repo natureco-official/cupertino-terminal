@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('termAPI', {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  confirmClose: () => ipcRenderer.send('window:close-confirmed'),
 
   // Shell profilleri
   listShells: () => ipcRenderer.invoke('shell:list'),
@@ -14,6 +15,9 @@ contextBridge.exposeInMainWorld('termAPI', {
   setSettings: (settings) => ipcRenderer.send('settings:set', settings),
   relaunch: () => ipcRenderer.send('app:relaunch'),
   getCaps: () => ipcRenderer.invoke('sys:caps'),
+  getSession: () => ipcRenderer.invoke('session:get'),
+  setSession: (session) => ipcRenderer.send('session:set', session),
+  getBootContext: () => ipcRenderer.invoke('app:boot-context'),
 
   // PTY yasam dongusu
   createPty: (tabId, profileKey, cols, rows, cwd) => ipcRenderer.invoke('pty:create', { tabId, profileKey, cols, rows, cwd }),
@@ -74,6 +78,7 @@ contextBridge.exposeInMainWorld('termAPI', {
   onNewTab: (callback) => { const l = () => callback(); ipcRenderer.on('app:new-tab', l); return () => ipcRenderer.removeListener('app:new-tab', l); },
   onCloseTab: (callback) => { const l = () => callback(); ipcRenderer.on('app:close-tab', l); return () => ipcRenderer.removeListener('app:close-tab', l); },
   onShowSettings: (callback) => { const l = () => callback(); ipcRenderer.on('app:show-settings', l); return () => ipcRenderer.removeListener('app:show-settings', l); },
+  onCloseRequested: (callback) => { const l = () => callback(); ipcRenderer.on('window:close-requested', l); return () => ipcRenderer.removeListener('window:close-requested', l); },
 
   // ── ZeroLink ──────────────────────────────────────────────────────────────
   // HOST: bu terminali paylas → ZeroLink kodu uret
