@@ -376,6 +376,34 @@ body.multi-tab #tabbar { display: flex; }
   display: none;
 }
 .pane.active { display: block; animation: pane-in 140ms ease-out; }
+.split-group {
+  position: absolute;
+  inset: 6px 10px 10px 10px;
+  display: none;
+  gap: 0;
+}
+.split-group.active { display: flex; }
+.split-group.vertical { flex-direction: row; }
+.split-group.horizontal { flex-direction: column; }
+.split-group > .pane {
+  position: relative;
+  inset: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: block;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+.split-group > .pane.active-cell { border-color: rgba(52, 120, 246, 0.75); }
+.split-divider { flex: 0 0 7px; position: relative; touch-action: none; background: transparent; }
+.split-divider::after { content: ''; position: absolute; border-radius: 2px; background: var(--border); transition: background 120ms ease; }
+.split-group.vertical > .split-divider { cursor: col-resize; }
+.split-group.vertical > .split-divider::after { top: 4px; bottom: 4px; left: 3px; width: 1px; }
+.split-group.horizontal > .split-divider { cursor: row-resize; }
+.split-group.horizontal > .split-divider::after { left: 4px; right: 4px; top: 3px; height: 1px; }
+.split-divider:hover::after { background: #3478f6; }
 
 /* xterm.js varsayilan konteynerine tam yukseklik/genislik ver */
 .xterm-wrapper {

@@ -8,6 +8,7 @@ import { SearchAddon } from '../node_modules/@xterm/addon-search/lib/addon-searc
 import { ShellState, parseOsc7 } from './shell-state.mjs';
 import { normalizeSession, serializeSession } from './session-state.mjs';
 import { filterCommands } from './command-palette.mjs';
+import { consumePromptInput, normalizeHistory } from './command-history.mjs';
 import './zerolink-cli.js'; // ZeroLinkCLI global'e yuklenir (window.ZeroLinkCLI)
 
 const ZeroLinkCLI = window.ZeroLinkCLI;
@@ -547,11 +548,11 @@ let paletteSelection = 0;
 const paletteText = () => settings.lang === 'tr' ? {
   placeholder: 'Bir komut yazın…', empty: 'Eşleşen komut yok', newTab: 'Yeni sekme', closeTab: 'Sekmeyi kapat',
   find: 'Terminalde ara', settings: 'Ayarları aç', zeroLink: 'ZeroLink panelini aç', clear: 'Terminali temizle',
-  theme: 'Tema', shell: 'Kabuk',
+  theme: 'Tema', shell: 'Kabuk', splitRight: 'Sağa böl', splitDown: 'Aşağı böl', closePane: 'Aktif paneli kapat', nextPane: 'Diğer panele odaklan', history: 'Geçmiş', clearHistory: 'Komut geçmişini temizle',
 } : {
   placeholder: 'Type a command…', empty: 'No matching commands', newTab: 'New tab', closeTab: 'Close tab',
   find: 'Find in terminal', settings: 'Open settings', zeroLink: 'Open ZeroLink', clear: 'Clear terminal',
-  theme: 'Theme', shell: 'Shell',
+  theme: 'Theme', shell: 'Shell', splitRight: 'Split right', splitDown: 'Split down', closePane: 'Close active pane', nextPane: 'Focus other pane', history: 'History', clearHistory: 'Clear command history',
 };
 
 async function allCommands() {
@@ -563,6 +564,11 @@ async function allCommands() {
     { id: 'settings', label: P.settings, shortcut: 'Ctrl/⌘ ,', keywords: 'preferences ayarlar', run: openSettings },
     { id: 'zerolink', label: P.zeroLink, shortcut: 'Ctrl/⌘ L', keywords: 'remote share uzak paylaş', run: toggleZeroLink },
     { id: 'clear', label: P.clear, keywords: 'clear temizle', run: () => tabs.get(activeTabId)?.term.clear() },
+    { id: 'split-right', label: P.splitRight, shortcut: 'Ctrl/⌘ Shift \\', keywords: 'vertical pane sağ böl', run: () => splitActive('vertical') },
+    { id: 'split-down', label: P.splitDown, shortcut: 'Ctrl/⌘ Shift -', keywords: 'horizontal pane aşağı böl', run: () => splitActive('horizontal') },
+    { id: 'close-pane', label: P.closePane, keywords: 'pane panel close kapat', run: () => activeTabId && closeTab(activeTabId) },
+    { id: 'next-pane', label: P.nextPane, shortcut: 'Ctrl/⌘ Alt →', keywords: 'pane panel focus odak', run: focusOtherPane },
+    { id: 'clear-history', label: P.clearHistory, keywords: 'history geçmiş clear temizle', run: () => window.termAPI.clearHistory() },
   ];
   for (const key of Object.keys(THEMES)) {
     base.push({ id: `theme-${key}`, label: `${P.theme}: ${key}`, keywords: 'appearance color görünüm renk', run: () => { settings.profile = key; applySettings(); syncSettingsUI(); } });
@@ -573,6 +579,23 @@ async function allCommands() {
       base.push({ id: `shell-${key}`, label: `${P.shell}: ${shell.name}`, keywords: 'terminal profile kabuk', run: () => createTabAtActiveCwd(key) });
     }
   } catch (_) { /* temel komutlar yine kullanilabilir */ }
+  try {
+    const history = normalizeHistory(await window.termAPI.listHistory()).slice(-50).reverse();
+    history.forEach((entry, index) => {
+      const status = entry.exitCode === 0 ? '✓' : entry.exitCode === null ? '•' : '✕';
+      base.push({
+        id: `history-${index}`,
+        label: `${P.history}: ${status} ${entry.command}`,
+        keywords: `${entry.cwd || ''} history geçmiş`,
+        run: () => {
+          const rec = tabs.get(activeTabId);
+          if (!rec) return;
+          rec.inputBuffer = entry.command;
+          window.termAPI.writePty(activeTabId, entry.command);
+        },
+      });
+    });
+  } catch (_) { /* gecmis okunamazsa palette calismaya devam eder */ }
   return base;
 }
 
@@ -681,12 +704,101 @@ document.getElementById('btn-min').addEventListener('click', () => window.termAP
 document.getElementById('btn-max').addEventListener('click', () => window.termAPI.maximize());
 function activeCwd() { return tabs.get(activeTabId)?.shellState?.cwd || null; }
 function createTabAtActiveCwd(profileKey = 'default') { return createTab(profileKey, activeCwd()); }
+function handleTerminalInput(rec, data) {
+  const captured = consumePromptInput(rec.inputBuffer, data, rec.shellState.atPrompt);
+  rec.inputBuffer = captured.buffer;
+  if (captured.submitted.length) {
+    rec.currentCommand = captured.submitted.at(-1);
+    rec.updateShellState?.(rec.shellState.commandStarted());
+  }
+}
+function rootIdFor(tabId) { return tabs.get(tabId)?.parentId || tabId; }
+function rootTabIds() { return [...tabs].filter(([, rec]) => !rec.parentId).map(([id]) => id); }
+function focusOtherPane() {
+  const rootId = rootIdFor(activeTabId);
+  const root = tabs.get(rootId);
+  if (!root?.splitChildId) return;
+  activateTab(activeTabId === rootId ? root.splitChildId : rootId);
+}
+
+function applySplitRatio(root, ratio) {
+  const child = tabs.get(root.splitChildId);
+  if (!child) return;
+  root.splitRatio = Math.max(20, Math.min(80, Number(ratio) || 50));
+  root.paneEl.style.flex = `0 0 ${root.splitRatio}%`;
+  child.paneEl.style.flex = '1 1 0';
+  requestAnimationFrame(() => { root.fitAddon.fit(); child.fitAddon.fit(); });
+}
+
+async function splitActive(direction = 'vertical', options = {}) {
+  if (!activeTabId) return;
+  const rootId = rootIdFor(activeTabId);
+  const root = tabs.get(rootId);
+  if (!root || root.splitChildId) return;
+  const cwd = options.cwd || activeCwd();
+  const profileKey = options.profileKey || tabs.get(activeTabId)?.profileKey || 'default';
+  await createTab(profileKey, cwd);
+  const childId = activeTabId;
+  const child = tabs.get(childId);
+  if (!child || childId === rootId) return;
+  child.parentId = rootId;
+  root.splitChildId = childId;
+  root.splitDirection = direction;
+  child.tabEl.remove();
+  const group = document.createElement('div');
+  group.className = `split-group ${direction}`;
+  root.splitGroup = group;
+  panesEl.insertBefore(group, root.paneEl);
+  const divider = document.createElement('div');
+  divider.className = 'split-divider';
+  divider.setAttribute('role', 'separator');
+  divider.setAttribute('aria-orientation', direction === 'vertical' ? 'vertical' : 'horizontal');
+  group.append(root.paneEl, divider, child.paneEl);
+  root.paneEl.classList.add('split-cell');
+  child.paneEl.classList.add('split-cell');
+  root.splitDivider = divider;
+  applySplitRatio(root, options.ratio || 50);
+  divider.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    divider.setPointerCapture(event.pointerId);
+    const move = (moveEvent) => {
+      const rect = group.getBoundingClientRect();
+      const raw = direction === 'vertical'
+        ? ((moveEvent.clientX - rect.left) / rect.width) * 100
+        : ((moveEvent.clientY - rect.top) / rect.height) * 100;
+      applySplitRatio(root, raw);
+    };
+    const finish = () => {
+      divider.removeEventListener('pointermove', move);
+      divider.removeEventListener('pointerup', finish);
+      divider.removeEventListener('pointercancel', finish);
+      scheduleSessionSave();
+    };
+    divider.addEventListener('pointermove', move);
+    divider.addEventListener('pointerup', finish);
+    divider.addEventListener('pointercancel', finish);
+  });
+  for (const [id, rec] of [[rootId, root], [childId, child]]) {
+    rec.paneEl.addEventListener('mousedown', () => activateTab(id));
+  }
+  activateTab(childId);
+  updateTabBarVisibility();
+  scheduleSessionSave();
+}
 document.getElementById('btn-new-tab').addEventListener('click', () => createTabAtActiveCwd());
 document.getElementById('btn-settings').addEventListener('click', () => toggleSettings());
 window.termAPI.onOpenDirectory((cwd) => createTab('default', cwd));
 window.termAPI.onNewTab(() => createTabAtActiveCwd());
 window.termAPI.onCloseTab(() => { if (activeTabId) closeTab(activeTabId); });
 window.termAPI.onShowSettings(() => openSettings());
+window.termAPI.onSmokeCommand((command) => {
+  const rec = tabs.get(activeTabId);
+  if (typeof command === 'string' && rec) {
+    rec.updateShellState?.(rec.shellState.osc133('A'));
+    handleTerminalInput(rec, `${command}\r`);
+    window.termAPI.writePty(activeTabId, `${command}\r`);
+  }
+});
 document.getElementById('btn-account')?.addEventListener('click', () => {
   if (overlayEl.hidden) openSettings();
   document.getElementById('nc-account-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -827,7 +939,7 @@ async function createTab(profileKey = 'default', cwd = null) {
   }
 
   // Kayit
-  const rec = { term, fitAddon, searchAddon, webglAddon, tabEl, paneEl, title: 'Terminal', shellName: 'Terminal', profileKey, shellState: new ShellState() };
+  const rec = { term, fitAddon, searchAddon, webglAddon, tabEl, paneEl, title: 'Terminal', shellName: 'Terminal', profileKey, shellState: new ShellState(), inputBuffer: '', currentCommand: null };
   rec.shellState.cwdChanged(cwd);
   tabs.set(tabId, rec);
 
@@ -839,13 +951,27 @@ async function createTab(profileKey = 'default', cwd = null) {
     const exit = state.lastExitCode === null ? '' : ` · exit ${state.lastExitCode}`;
     tabEl.title = `${state.cwd || rec.title}${exit}${duration}`;
   };
+  rec.updateShellState = updateShellState;
   term.parser.registerOscHandler(7, (data) => {
     const cwdValue = parseOsc7(data, navigator.platform.startsWith('Win') ? 'win32' : 'posix');
     if (cwdValue) updateShellState(rec.shellState.cwdChanged(cwdValue));
     if (cwdValue) scheduleSessionSave();
     return true;
   });
-  term.parser.registerOscHandler(133, (data) => { updateShellState(rec.shellState.osc133(data)); return true; });
+  term.parser.registerOscHandler(133, (data) => {
+    const state = rec.shellState.osc133(data);
+    updateShellState(state);
+    if (String(data).startsWith('D') && rec.currentCommand) {
+      window.termAPI.addHistory({
+        command: rec.currentCommand,
+        cwd: state.cwd,
+        exitCode: state.lastExitCode,
+        durationMs: state.lastDurationMs,
+      });
+      rec.currentCommand = null;
+    }
+    return true;
+  });
 
   // ---- Kabuk (shell) OSC baslik degisimi → sekme + pencere basligi (macOS gibi) ----
   term.onTitleChange((title) => setTabTitle(tabId, title));
@@ -869,6 +995,9 @@ async function createTab(profileKey = 'default', cwd = null) {
 
     if (mod) {
       if (k === 'p' && e.shiftKey) { openCommandPalette(); return false; }
+      if (e.shiftKey && e.key === '|') { splitActive('vertical'); return false; }
+      if (e.shiftKey && e.key === '_') { splitActive('horizontal'); return false; }
+      if (e.altKey && e.key === 'ArrowRight') { focusOtherPane(); return false; }
       if (k === 'f' && !e.shiftKey) { openSearch(); return false; }
       // Yeni / kapat sekme
       if (k === 't' && !e.shiftKey) { createTabAtActiveCwd(); return false; }
@@ -947,21 +1076,19 @@ async function createTab(profileKey = 'default', cwd = null) {
   });
   rec.zlCli = zlCli;
 
+  function handleInput(data) { handleTerminalInput(rec, data); }
   term.onData((data) => {
-    if ((data.includes('\r') || data.includes('\n')) && rec.shellState.atPrompt) {
-      updateShellState(rec.shellState.commandStarted());
-    }
+    handleInput(data);
     // Client modunda girdi uzak PTY'ye; degilse (intercept degilse) yerel PTY'ye
     const passThrough = zlCli.handleData(data);
     if (passThrough) window.termAPI.writePty(tabId, data);
   });
   term.onResize(({ cols, rows }) => {
     window.termAPI.resizePty(tabId, cols, rows);
-    // SSH SIGWINCH muadili: uzak oturuma bagli sekmede boyutu karsiya da ilet
+    // SSH SIGWINCH muadili: uzak oturuma bagli sekmede boyutu karsiya da ayarla
     if (zlState.clientActive && zlState.clientTabId === tabId) {
       window.termAPI.zlClientResize(cols, rows);
     }
-    // macOS Terminal basligi boyutu canli gosterir ("PowerShell — 120×34")
     if (tabId === activeTabId) updateWindowTitle();
   });
 
@@ -975,7 +1102,7 @@ async function createTab(profileKey = 'default', cwd = null) {
 
   // Pencere yeniden boyutlandiginda aktif terminali yeniden hizala
   const resizeObserver = new ResizeObserver(() => {
-    if (activeTabId === tabId) fitAddon.fit();
+    if (rootIdFor(activeTabId) === rootIdFor(tabId)) fitAddon.fit();
   });
   resizeObserver.observe(paneEl);
 
@@ -1004,7 +1131,7 @@ function updateWindowTitle() {
 }
 
 function updateTabBarVisibility() {
-  const multi = tabs.size > 1;
+  const multi = rootTabIds().length > 1;
   document.body.classList.toggle('multi-tab', multi);
   document.body.classList.toggle('single-tab', !multi);
   // Sekme cubugu gorunurlugu pane yuksekligini degistirir → aktif terminali yeniden hizala
@@ -1013,15 +1140,19 @@ function updateTabBarVisibility() {
 }
 
 function switchToIndex(i) {
-  const ids = [...tabs.keys()];
+  const ids = rootTabIds();
   if (i >= 0 && i < ids.length) activateTab(ids[i]);
 }
 
 function activateTab(tabId) {
+  const rootId = rootIdFor(tabId);
   for (const [id, t] of tabs) {
-    const isActive = id === tabId;
-    t.tabEl.classList.toggle('active', isActive);
-    t.paneEl.classList.toggle('active', isActive);
+    const recordRootId = t.parentId || id;
+    const sameRoot = recordRootId === rootId;
+    if (!t.parentId) t.tabEl.classList.toggle('active', id === rootId);
+    t.paneEl.classList.toggle('active', sameRoot);
+    t.paneEl.classList.toggle('active-cell', id === tabId);
+    if (!t.parentId && t.splitGroup) t.splitGroup.classList.toggle('active', id === rootId);
   }
   activeTabId = tabId;
   const t = tabs.get(tabId);
@@ -1038,6 +1169,49 @@ function closeTab(tabId) {
   if (!t) return;
   if (t.shellState?.running && !window.confirm((LANGS[settings.lang] || LANGS.en).closeRunning)) return;
 
+  if (!t.parentId && t.splitChildId) {
+    const child = tabs.get(t.splitChildId);
+    if (child?.shellState?.running && !window.confirm((LANGS[settings.lang] || LANGS.en).closeRunning)) return;
+    if (child) destroyTerminalRecord(t.splitChildId, child);
+    t.splitGroup?.remove();
+    t.splitGroup = null;
+    t.splitChildId = null;
+    t.splitDivider = null;
+    t.splitDirection = null;
+    t.splitRatio = null;
+  }
+  if (t.parentId) {
+    const root = tabs.get(t.parentId);
+    destroyTerminalRecord(tabId, t);
+    if (root?.splitGroup) {
+      panesEl.insertBefore(root.paneEl, root.splitGroup);
+      root.splitGroup.remove();
+      root.splitGroup = null;
+      root.splitChildId = null;
+      root.splitDivider = null;
+      root.splitDirection = null;
+      root.splitRatio = null;
+      root.paneEl.classList.remove('split-cell');
+      root.paneEl.style.flex = '';
+    }
+    activateTab(t.parentId);
+    updateTabBarVisibility();
+    scheduleSessionSave();
+    return;
+  }
+  destroyTerminalRecord(tabId, t);
+
+  if (rootTabIds().length) {
+    activateTab(rootTabIds().at(-1));
+  } else {
+    activeTabId = null;
+    createTab();
+  }
+  updateTabBarVisibility();
+  scheduleSessionSave();
+}
+
+function destroyTerminalRecord(tabId, t) {
   window.termAPI.killPty(tabId);
   t.unsubData?.();
   t.unsubExit?.();
@@ -1046,18 +1220,6 @@ function closeTab(tabId) {
   t.tabEl.remove();
   t.paneEl.remove();
   tabs.delete(tabId);
-
-  if (activeTabId === tabId) {
-    const remaining = [...tabs.keys()];
-    if (remaining.length) {
-      activateTab(remaining[remaining.length - 1]);
-    } else {
-      activeTabId = null;
-      createTab(); // en az bir sekme her zaman acik kalsin
-    }
-  }
-  updateTabBarVisibility();
-  scheduleSessionSave();
 }
 
 // ================= Ayarlar paneli =================
@@ -1778,8 +1940,11 @@ async function boot() {
     await createTab('default', bootContext.cwd);
   } else if (session.tabs.length) {
     restoringSession = true;
-    for (const tab of session.tabs) await createTab(tab.profileKey, tab.cwd);
-    const restoredId = [...tabs.keys()][session.activeIndex];
+    for (const tab of session.tabs) {
+      await createTab(tab.profileKey, tab.cwd);
+      if (tab.split) await splitActive(tab.split.direction, tab.split);
+    }
+    const restoredId = rootTabIds()[session.activeIndex];
     if (restoredId) activateTab(restoredId);
     restoringSession = false;
     scheduleSessionSave();

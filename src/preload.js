@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('termAPI', {
   getSession: () => ipcRenderer.invoke('session:get'),
   setSession: (session) => ipcRenderer.send('session:set', session),
   getBootContext: () => ipcRenderer.invoke('app:boot-context'),
+  listHistory: () => ipcRenderer.invoke('history:list'),
+  addHistory: (entry) => ipcRenderer.send('history:add', entry),
+  clearHistory: () => ipcRenderer.send('history:clear'),
 
   // PTY yasam dongusu
   createPty: (tabId, profileKey, cols, rows, cwd) => ipcRenderer.invoke('pty:create', { tabId, profileKey, cols, rows, cwd }),
@@ -79,6 +82,7 @@ contextBridge.exposeInMainWorld('termAPI', {
   onCloseTab: (callback) => { const l = () => callback(); ipcRenderer.on('app:close-tab', l); return () => ipcRenderer.removeListener('app:close-tab', l); },
   onShowSettings: (callback) => { const l = () => callback(); ipcRenderer.on('app:show-settings', l); return () => ipcRenderer.removeListener('app:show-settings', l); },
   onCloseRequested: (callback) => { const l = () => callback(); ipcRenderer.on('window:close-requested', l); return () => ipcRenderer.removeListener('window:close-requested', l); },
+  onSmokeCommand: (callback) => { const l = (_, command) => callback(command); ipcRenderer.on('app:smoke-command', l); return () => ipcRenderer.removeListener('app:smoke-command', l); },
 
   // ── ZeroLink ──────────────────────────────────────────────────────────────
   // HOST: bu terminali paylas → ZeroLink kodu uret

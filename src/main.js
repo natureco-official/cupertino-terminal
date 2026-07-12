@@ -19,9 +19,13 @@ const fs = require('fs');
 const store = new Store(IS_SMOKE_TEST ? { name: 'cupertino-smoke-test' } : undefined);
 if (IS_SMOKE_TEST) {
   store.clear();
+  const smokeProfile = process.platform === 'win32' ? 'powershell' : 'zsh';
   store.set('session', {
-    tabs: [{ profileKey: 'default', cwd: os.homedir() }, { profileKey: 'default', cwd: os.homedir() }],
-    activeIndex: 1,
+    tabs: [
+      { profileKey: smokeProfile, cwd: os.homedir(), split: { direction: 'vertical', ratio: 62, profileKey: smokeProfile, cwd: os.homedir() } },
+      { profileKey: smokeProfile, cwd: os.homedir() },
+    ],
+    activeIndex: 0,
   });
 }
 const APP_STARTED_AT = Date.now();
@@ -186,12 +190,13 @@ function createWindow() {
               renderer: document.querySelector('.xterm-screen canvas') ? 'canvas' : 'dom',
               cwdCount: [...document.querySelectorAll('.tab')].filter((tab) => tab.dataset.cwd).length,
               tabCount: document.querySelectorAll('.tab').length,
+              terminalCount: document.querySelectorAll('.xterm').length,
               viewportBackground: viewport ? getComputedStyle(viewport).backgroundColor : 'missing',
               bodyBackground: getComputedStyle(document.body).backgroundColor,
               title: document.title
             };
           })()`);
-        } while ((result.tabCount !== 2 || result.cwdCount !== 2) && Date.now() < deadline);
+        } while ((result.tabCount !== 2 || result.cwdCount !== 2 || result.terminalCount !== 3) && Date.now() < deadline);
         const uiChecks = await mainWindow.webContents.executeJavaScript(`(() => {
           const target = document.activeElement || document.body;
           target.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }));
@@ -205,11 +210,28 @@ function createWindow() {
         if (!result.xterm) throw new Error('xterm screen was not created');
         if (!uiChecks.searchOpened) throw new Error('terminal search did not open');
         if (!uiChecks.paletteOpened) throw new Error('command palette did not open');
-        if (result.cwdCount !== 2) throw new Error(`shell integration reported ${result.cwdCount}/2 working directories`);
+        if (result.cwdCount !== 2) throw new Error(`session restore reported ${result.cwdCount}/2 root working directories`);
         if (result.tabCount !== 2) throw new Error(`session restore expected 2 tabs, got ${result.tabCount}`);
+        if (result.terminalCount !== 3) throw new Error(`session restore expected 3 terminals, got ${result.terminalCount}`);
         if (!/rgba\([^)]*,\s*0\)/.test(result.viewportBackground) && result.viewportBackground !== 'transparent') {
           throw new Error(`terminal viewport is not transparent: ${result.viewportBackground}`);
         }
+        const splitLayout = await mainWindow.webContents.executeJavaScript(`(() => {
+          const group = document.querySelector('.split-group.active');
+          return { cells: group?.querySelectorAll('.split-cell').length || 0, ratio: group?.querySelector('.split-cell')?.style.flexBasis || '' };
+        })()`);
+        const splitCells = splitLayout.cells;
+        if (splitCells !== 2) throw new Error(`split pane expected 2 cells, got ${splitCells}`);
+        if (splitLayout.ratio !== '62%') throw new Error(`split pane ratio expected 62%, got ${splitLayout.ratio}`);
+        const historyCommand = 'echo CUPERTINO_HISTORY_SMOKE';
+        mainWindow.webContents.send('app:smoke-command', historyCommand);
+        const historyDeadline = Date.now() + 5000;
+        while (!store.get('commandHistory', []).some((entry) => entry.command === historyCommand) && Date.now() < historyDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        const historyEntry = store.get('commandHistory', []).find((entry) => entry.command === historyCommand);
+        if (!historyEntry) throw new Error('command history entry was not persisted');
+        if (historyEntry.exitCode !== 0) throw new Error(`command history exit code expected 0, got ${historyEntry.exitCode}`);
         const startupMs = Date.now() - APP_STARTED_AT;
         if (startupMs > 10000) throw new Error(`startup exceeded 10000ms (${startupMs}ms)`);
         console.log(`Application smoke test passed (${result.renderer} renderer, ${startupMs}ms)`);
@@ -606,6 +628,22 @@ ipcMain.handle('app:boot-context', () => {
   launchCwd = null;
   return { cwd };
 });
+ipcMain.handle('history:list', () => store.get('commandHistory', []));
+ipcMain.on('history:add', (event, entry) => {
+  if (!entry || typeof entry.command !== 'string' || !entry.command.trim()) return;
+  const history = store.get('commandHistory', []);
+  const clean = {
+    command: entry.command.trim().slice(0, 4096),
+    cwd: typeof entry.cwd === 'string' ? entry.cwd : null,
+    exitCode: Number.isInteger(entry.exitCode) ? entry.exitCode : null,
+    durationMs: Number.isFinite(entry.durationMs) ? Math.max(0, entry.durationMs) : null,
+    timestamp: Date.now(),
+  };
+  if (history.at(-1)?.command === clean.command && history.at(-1)?.cwd === clean.cwd) history[history.length - 1] = clean;
+  else history.push(clean);
+  store.set('commandHistory', history.slice(-500));
+});
+ipcMain.on('history:clear', () => store.delete('commandHistory'));
 ipcMain.on('settings:set', (event, settings) => {
   if (!settings || typeof settings !== 'object') return;
   store.set('settings', settings);
