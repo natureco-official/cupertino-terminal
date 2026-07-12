@@ -5,14 +5,41 @@ name: Build installers
 # Elle de tetiklenebilir (Actions sekmesi → Run workflow).
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write   # Release oluşturma/dosya yükleme için
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify application
+        run: npm run check && npm run smoke:native && npm run smoke:app && npm run perf:pty && npm audit --audit-level=high
+
   build:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: verify
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -38,11 +65,12 @@ jobs:
               dist/*.blockmap
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
+          cache: npm
 
       # CI'de lavamoat yok → native prebuild + electron postinstall normal çalışır
       - name: Install dependencies
@@ -61,7 +89,7 @@ jobs:
 
       - name: Attach installer to Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ matrix.pattern }}
           fail_on_unmatched_files: false
