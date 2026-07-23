@@ -186,6 +186,7 @@ class ZeroLinkPeer extends EventEmitter {
     this._hsSent       = false; // handshake gönderildi mi (idempotent)
     this._closed       = false;
     this._expectedRemotePublicKey = null;
+    this._pairingKey   = null;  // ZeroLink kodundan gelen paylaşılan sır — handshake kanıtı için ZORUNLU
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -298,6 +299,16 @@ class ZeroLinkPeer extends EventEmitter {
     this._expectedRemotePublicKey = Buffer.from(publicKey);
   }
 
+  /**
+   * ZeroLink kodundan çözülen (client) veya start() sırasında üretilen (host)
+   * eşleştirme anahtarını ayarlar. Handshake bu anahtar olmadan ASLA kurulamaz —
+   * DataChannel açılması tek başına yeterli değildir (bkz. zerolink-crypto.js).
+   */
+  setPairingKey(pairingKey) {
+    if (!Buffer.isBuffer(pairingKey) || pairingKey.length !== 16) throw new Error('Geçersiz eşleştirme anahtarı');
+    this._pairingKey = Buffer.from(pairingKey);
+  }
+
   // ── Sinyalleşme (UDP rendezvous) ────────────────────────────────────────────
 
   /**
@@ -362,9 +373,11 @@ class ZeroLinkPeer extends EventEmitter {
   _setupDataChannel(dc) {
     const sendHandshakeOnce = () => {
       if (this._hsSent) return;
+      if (!this._pairingKey) return; // eşleştirme anahtarı henüz ayarlanmadı — bekle
       this._hsSent = true;
-      try { dc.sendMessageBinary(buildHandshake(this._keyPair.publicKey)); } catch (_) {}
-      // Not: handshake şifresiz gider — içeriği zaten public key
+      try { dc.sendMessageBinary(buildHandshake(this._keyPair.publicKey, this._pairingKey)); } catch (_) {}
+      // Not: handshake'in publicKey/nonce kısmı şifresiz gider (içeriği zaten
+      // public); ama eşleştirme kanıtı (proof) pairingKey olmadan üretilemez.
     };
 
     dc.onOpen(sendHandshakeOnce);
@@ -377,7 +390,8 @@ class ZeroLinkPeer extends EventEmitter {
       // Henüz anahtar türetilmediyse handshake paketi bekliyoruz
       if (!this._encKey) {
         try {
-          const { publicKey } = parseHandshake(buf);
+          if (!this._pairingKey) throw new Error('Eşleştirme anahtarı ayarlanmadan handshake alınamaz');
+          const { publicKey } = parseHandshake(buf, this._pairingKey);
           if (this._expectedRemotePublicKey && !crypto.timingSafeEqual(publicKey, this._expectedRemotePublicKey)) {
             throw new Error('Uzak kimlik kodla eşleşmiyor (olası aradaki-adam saldırısı)');
           }
@@ -386,7 +400,11 @@ class ZeroLinkPeer extends EventEmitter {
           sendHandshakeOnce(); // karşı taraf bizimkini almadıysa (onOpen kaçtıysa)
           this.emit('connected');
         } catch (err) {
+          // Kanıt geçersizse (kodu bilmeyen biri bağlanmaya çalıştı) bağlantıyı
+          // HEMEN kapat — açık bırakırsak aynı DataChannel üzerinden sınırsız
+          // deneme (offline brute-force benzeri) yapılabilir.
           this.emit('error', new Error(`Handshake başarısız: ${err.message}`));
+          this.close();
         }
         return;
       }

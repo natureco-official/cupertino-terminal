@@ -6,12 +6,18 @@
  *
  * Protokol özeti:
  *   1. Her oturum için ECDH P-256 anahtar çifti üretilir (forward secrecy).
- *   2. Host: publicKey (33B compressed) + adres listesi + timestamp
- *      → HMAC-SHA256 (16B'ye kısaltılmış) ile imzalanır → Base32 → ZeroLink kodu.
+ *   2. Host: publicKey (33B compressed) + rastgele eşleştirme anahtarı (16B) +
+ *      adres listesi + timestamp → HMAC-SHA256 (16B'ye kısaltılmış) ile
+ *      imzalanır → Base32 → ZeroLink kodu.
  *   3. Client kodu çözer, ECDH ile ortak sır türetir, AES-256-GCM tüneli açar.
- *   4. Her mesaj: counter(8) + IV(12) + AuthTag(16) + Ciphertext — replay koruması
+ *   4. Handshake KARŞILIKLI kimlik doğrulama içerir: her iki taraf da kod
+ *      içindeki eşleştirme anahtarıyla HMAC kanıtı üretir/doğrular — sadece
+ *      kodu bant-dışı almış taraf bağlantıyı tamamlayabilir. WebRTC sinyalleşmesi
+ *      (hello/offer/answer) tek başına kimlik doğrulaması SAĞLAMAZ; DataChannel
+ *      açılsa bile eşleştirme kanıtı geçersizse oturum ASLA kurulmaz.
+ *   5. Her mesaj: counter(8) + IV(12) + AuthTag(16) + Ciphertext — replay koruması
  *      için 64-bit monotonic sayaç (kanal ordered+reliable → sıkı artan).
- *   5. Kod tek kullanımlık + 5 dakika TTL.
+ *   6. Kod tek kullanımlık + 5 dakika TTL.
  */
 
 'use strict';
@@ -26,6 +32,8 @@ const CODE_HMAC_LEN = 16;              // kod imzası 16 byte'a kısaltılır (k
 const GCM_TAG_LEN   = 16;
 const GCM_IV_LEN    = 12;
 const PUBKEY_LEN    = 33;              // P-256 compressed point
+const PAIRING_KEY_LEN = 16;            // kod içine gömülen, rastgele eşleştirme anahtarı
+const HS_PROOF_LEN  = 32;              // handshake HMAC-SHA256 kanıtı
 
 // Uygulama genelinde sabit HMAC imzalama anahtarı (sadece kod bütünlüğü için;
 // oturum şifreleme anahtarından bağımsız — ikisi hiçbir zaman karışmaz).
@@ -83,6 +91,16 @@ function generateKeyPair() {
     ecdh,                                          // deriveSecret için saklanır
     publicKey: ecdh.getPublicKey(null, 'compressed'), // 33 byte, karşı tarafa gider
   };
+}
+
+/**
+ * Rastgele 16 byte'lık eşleştirme anahtarı — kod içine gömülür, ASLA açık
+ * olarak DataChannel üzerinden gönderilmez. Handshake sırasında sadece bu
+ * anahtarla üretilmiş bir HMAC KANITI paylaşılır; anahtarın kendisi hiçbir
+ * zaman ağdan geçmez. Sadece kodu bant-dışı alan taraf bu kanıtı üretebilir.
+ */
+function generatePairingKey() {
+  return crypto.randomBytes(PAIRING_KEY_LEN);
 }
 
 /**
@@ -185,16 +203,18 @@ function unpackAddrs(buf, offset) {
 // ── ZeroLink Kod Formatı ──────────────────────────────────────────────────────
 /**
  * Kod yapısı (binary):
- *   [0-1]   version   : uint16 = 0x5A4C ('ZL')
- *   [2-9]   timestamp : uint64 (ms, Unix)
- *   [10-42] publicKey : 33 byte ECDH compressed point
- *   [43..]  addrs     : count(1) + [ip4(4)+port(2)]*count  (yerel + public)
- *   [son 16] hmac     : HMAC-SHA256(payload)[0..16]
+ *   [0-1]   version     : uint16 = 0x5A4C ('ZL')
+ *   [2-9]   timestamp   : uint64 (ms, Unix)
+ *   [10-42] publicKey   : 33 byte ECDH compressed point
+ *   [43-58] pairingKey  : 16 byte rastgele — handshake kanıtı için (bkz. buildHandshake)
+ *   [59..]  addrs       : count(1) + [ip4(4)+port(2)]*count  (yerel + public)
+ *   [son 16] hmac       : HMAC-SHA256(payload)[0..16]
  *
- * Örn. 2 adres: 2+8+33+13+16 = 72 byte → Base32 ≈ 116 karakter (4'lü gruplar).
+ * Örn. 2 adres: 2+8+33+16+13+16 = 88 byte → Base32 ≈ 140 karakter (4'lü gruplar).
  */
-function encodeZeroCode({ publicKey, addrs, timestamp }) {
+function encodeZeroCode({ publicKey, pairingKey, addrs, timestamp }) {
   if (!publicKey || publicKey.length !== PUBKEY_LEN) throw new Error('Geçersiz public key');
+  if (!pairingKey || pairingKey.length !== PAIRING_KEY_LEN) throw new Error('Geçersiz eşleştirme anahtarı');
   const ts = BigInt(timestamp ?? Date.now());
 
   const version = Buffer.alloc(2);
@@ -203,7 +223,7 @@ function encodeZeroCode({ publicKey, addrs, timestamp }) {
   const tsBuf = Buffer.alloc(8);
   tsBuf.writeBigUInt64BE(ts);
 
-  const payload = Buffer.concat([version, tsBuf, publicKey, packAddrs(addrs)]);
+  const payload = Buffer.concat([version, tsBuf, publicKey, pairingKey, packAddrs(addrs)]);
 
   const hmac = crypto.createHmac('sha256', APP_HMAC_KEY).update(payload).digest().subarray(0, CODE_HMAC_LEN);
   const b32  = base32Encode(Buffer.concat([payload, hmac]));
@@ -215,14 +235,16 @@ function decodeZeroCode(code) {
   const raw = code.replace(/[-\s]/g, '');
   const buf = base32Decode(raw);
 
-  if (buf.length < 2 + 8 + PUBKEY_LEN + 1 + CODE_HMAC_LEN) throw new Error('Kod çok kısa');
+  const HEAD = 2 + 8 + PUBKEY_LEN + PAIRING_KEY_LEN; // version+ts+pubkey+pairingKey
+  if (buf.length < HEAD + 1 + CODE_HMAC_LEN) throw new Error('Kod çok kısa');
 
   const version = buf.readUInt16BE(0);
   if (version !== CODE_VERSION) throw new Error('Geçersiz ZeroLink kodu');
 
-  const ts        = buf.readBigUInt64BE(2);
-  const publicKey = buf.subarray(10, 10 + PUBKEY_LEN);
-  const { addrs, end } = unpackAddrs(buf, 10 + PUBKEY_LEN);
+  const ts         = buf.readBigUInt64BE(2);
+  const publicKey  = buf.subarray(10, 10 + PUBKEY_LEN);
+  const pairingKey = buf.subarray(10 + PUBKEY_LEN, HEAD);
+  const { addrs, end } = unpackAddrs(buf, HEAD);
   if (buf.length < end + CODE_HMAC_LEN) throw new Error('Kod eksik');
 
   const payload = buf.subarray(0, end);
@@ -238,6 +260,7 @@ function decodeZeroCode(code) {
 
   return {
     publicKey: Buffer.from(publicKey),
+    pairingKey: Buffer.from(pairingKey),
     addrs,
     timestamp: Number(ts),
   };
@@ -245,21 +268,39 @@ function decodeZeroCode(code) {
 
 // ── Handshake Paketi ──────────────────────────────────────────────────────────
 /**
- * DataChannel açılınca public key değişimi.
- * Format: [ 'ZLHS' magic(4) | publicKey(33) | nonce(16) ]
+ * DataChannel açılınca public key değişimi + KARŞILIKLI kimlik doğrulama.
+ * Format: [ 'ZLHS' magic(4) | publicKey(33) | nonce(16) | proof(32) ]
+ *
+ * `proof` = HMAC-SHA256(pairingKey, magic || publicKey || nonce). pairingKey
+ * ASLA bu paketin içinde gitmez — sadece kod içinden bant-dışı alınmış olabilir.
+ * Bu sayede DataChannel'ı açan HERKES değil, sadece kodu bilen taraf geçerli
+ * bir handshake üretebilir/doğrulayabilir (WebRTC sinyalleşmesinin kendisi
+ * kimlik doğrulaması sağlamadığından, bu kanıt olmadan oturum ASLA kurulmaz).
  */
-function buildHandshake(publicKey) {
+function buildHandshake(publicKey, pairingKey) {
+  if (!pairingKey || pairingKey.length !== PAIRING_KEY_LEN) throw new Error('Geçersiz eşleştirme anahtarı');
   const magic = Buffer.from('ZLHS', 'ascii');
   const nonce = crypto.randomBytes(16);
-  return Buffer.concat([magic, publicKey, nonce]);
+  const transcript = Buffer.concat([magic, publicKey, nonce]);
+  const proof = crypto.createHmac('sha256', pairingKey).update(transcript).digest();
+  return Buffer.concat([transcript, proof]);
 }
 
-function parseHandshake(buf) {
-  if (buf.length < 4 + PUBKEY_LEN + 16) throw new Error('Handshake paketi geçersiz');
+function parseHandshake(buf, pairingKey) {
+  if (!pairingKey || pairingKey.length !== PAIRING_KEY_LEN) throw new Error('Geçersiz eşleştirme anahtarı');
+  if (buf.length < 4 + PUBKEY_LEN + 16 + HS_PROOF_LEN) throw new Error('Handshake paketi geçersiz');
   const magic = buf.subarray(0, 4).toString('ascii');
   if (magic !== 'ZLHS') throw new Error('Handshake magic geçersiz');
   const publicKey = Buffer.from(buf.subarray(4, 4 + PUBKEY_LEN));
   const nonce     = buf.subarray(4 + PUBKEY_LEN, 4 + PUBKEY_LEN + 16);
+  const proof     = buf.subarray(4 + PUBKEY_LEN + 16, 4 + PUBKEY_LEN + 16 + HS_PROOF_LEN);
+
+  const transcript = buf.subarray(0, 4 + PUBKEY_LEN + 16);
+  const expectedProof = crypto.createHmac('sha256', pairingKey).update(transcript).digest();
+  if (!crypto.timingSafeEqual(proof, expectedProof)) {
+    throw new Error('Eşleştirme kanıtı geçersiz — kodu bilmeyen bir taraf bağlanmaya çalıştı');
+  }
+
   return { publicKey, nonce };
 }
 
@@ -276,6 +317,7 @@ function codeTimeLeft(timestamp) {
 
 module.exports = {
   generateKeyPair,
+  generatePairingKey,
   deriveSessionKeys,
   encrypt,
   decrypt,
@@ -286,4 +328,5 @@ module.exports = {
   formatCodeDisplay,
   codeTimeLeft,
   CODE_TTL_MS,
+  PAIRING_KEY_LEN,
 };

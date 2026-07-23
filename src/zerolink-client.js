@@ -62,6 +62,7 @@ class ZeroLinkClient extends EventEmitter {
     this._peer = new ZeroLinkPeer();
     await this._peer.prepare({ bindPort: 0, discover: false });
     this._peer.expectRemotePublicKey(decoded.publicKey);
+    this._peer.setPairingKey(decoded.pairingKey);
 
     this._peer.onSignal((msg, rinfo) => this._handleSignal(msg, rinfo));
 

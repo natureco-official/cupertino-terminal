@@ -19,7 +19,7 @@
 const os   = require('os');
 const EventEmitter = require('events');
 const { ZeroLinkPeer, SIGNAL_PORT } = require('./zerolink-peer');
-const { encodeZeroCode, codeTimeLeft } = require('./zerolink-crypto');
+const { encodeZeroCode, codeTimeLeft, generatePairingKey } = require('./zerolink-crypto');
 const P = require('./zerolink-proto');
 const { FileSink, sendFile, ForwardHub } = require('./zerolink-transfer');
 
@@ -57,8 +57,13 @@ class ZeroLinkHost extends EventEmitter {
     this._peer = new ZeroLinkPeer();
     const { publicKey, addrs } = await this._peer.prepare({ bindPort: SIGNAL_PORT, discover: true });
 
+    // Kod içine gömülen rastgele sır: handshake'i sadece kodu bilen tarafın
+    // tamamlayabilmesini sağlar (bkz. zerolink-crypto.js buildHandshake/parseHandshake).
+    const pairingKey = generatePairingKey();
+    this._peer.setPairingKey(pairingKey);
+
     const timestamp = Date.now();
-    const code = encodeZeroCode({ publicKey, addrs, timestamp });
+    const code = encodeZeroCode({ publicKey, pairingKey, addrs, timestamp });
     this._codeData = { code, timestamp, addrs };
 
     this._codeTimer = setInterval(() => {

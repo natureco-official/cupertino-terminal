@@ -1,7 +1,7 @@
 {
   "name": "cupertino-terminal",
   "productName": "Cupertino Terminal",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
   "main": "src/main.js",
   "author": "",

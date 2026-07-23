@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 — 2026-07-24
+
+### Security — critical, breaking wire-protocol change
+
+- **Fixed: the ZeroLink host accepted any WebRTC connection as authenticated, regardless of whether the connecting party ever possessed the ZeroLink code.** The 0.4.0 fix pinned the *client*'s view of the host's public key to the one embedded in the code (closing an active MITM gap), but nothing on the *host* side verified the connecting client. WebRTC signaling itself (`hello`/`offer`/`answer` on the fixed UDP rendezvous port) required no credential, and the host derived a session key from — and started a live shell for — whatever public key the connecting peer sent in its handshake. On a shared network, anyone who could reach the host's signaling port could obtain full interactive shell access without ever seeing the code.
+  - Fix: the code now embeds an additional random 16-byte pairing key. The handshake packet carries an HMAC-SHA256 proof computed from it; both sides verify the proof before deriving session keys or starting a session. A connection that completes WebRTC negotiation without a valid proof is closed immediately, never reaches `'connected'`, and no shell is ever spawned for it.
+  - **This changes the ZeroLink code and handshake wire format.** Hosts and clients must both be on 0.5.0+; older and newer versions cannot connect to each other.
+
+### Verification
+- 30 regression tests (5 new, covering the pairing-key round-trip and the exact attack this fix closes), `tsc --noEmit`, full syntax check.
+
 ## 0.4.0 — 2026-07-13
 
 ### macOS
