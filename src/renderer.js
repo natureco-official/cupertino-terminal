@@ -912,18 +912,26 @@ async function createTab(profileKey = 'default', cwd = null) {
   term.loadAddon(new WebLinksAddon());
   term.open(xtermWrapper);
   let webglAddon = null;
-  if (settings.gpuRenderer === true) {
+  const shouldTryWebgl = settings.gpuRenderer === true || Boolean(window.__TAURI_INTERNALS__);
+  if (shouldTryWebgl) {
     try {
+      const probe = document.createElement('canvas').getContext('webgl2');
+      if (!probe) throw new Error('WebGL2 context creation failed');
       webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         console.warn('WebGL context lost; falling back to DOM renderer.');
         webglAddon?.dispose();
         webglAddon = null;
+        console.info('xterm renderer active: DOM');
       });
       term.loadAddon(webglAddon);
+      console.info('xterm renderer active: WebGL2');
     } catch (error) {
       console.warn(`WebGL renderer unavailable; using DOM renderer: ${error.message}`);
+      console.info('xterm renderer active: DOM');
     }
+  } else {
+    console.info('xterm renderer active: DOM');
   }
   fitAddon.fit();
 

@@ -91,6 +91,17 @@ Severity: **P1** = breaks a core interaction on macOS · **P2** = wrong/annoying
   Tauri build.
 - **Confirm on Mac:** yes.
 
+### W4 — No window controls on macOS with `decorations:false` + hidden custom traffic-lights  **[P1 for migration]**
+- **Symptom:** Rock 0 sets Tauri `decorations: false` (frameless), and the CSS hides the app's own
+  traffic lights on `.platform-mac` (`src/styles.css:188`, written for Electron's native
+  hiddenInset lights). Under Tauri there are NO native traffic lights, so on macOS the window would
+  show **no close/minimize/zoom controls at all**. (Not caught in Rock 0 — its proof ran on Windows,
+  which shows the custom traffic lights.)
+- **Fix (Rock 2/4):** either show the app's custom traffic lights on macOS too (drop the
+  `.platform-mac` hide + wire them to Tauri window commands), or use Tauri's macOS
+  `titleBarStyle: Overlay`/transparent titlebar to get real native traffic lights and inset them.
+- **Confirm on Mac:** yes.
+
 ### W3 — Vibrancy correctness under Tauri/WKWebView  **[P2]**
 - **Symptom:** current app uses Electron `vibrancy: 'under-window'`. Tauri sets macOS vibrancy
   differently (window effects API); must reproduce the same frosted-glass look and the transparent
