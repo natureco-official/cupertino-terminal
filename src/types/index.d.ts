@@ -170,7 +170,7 @@ export interface TermAPI {
   writePty(tabId: string, data: string): void;
   resizePty(tabId: string, cols: number, rows: number): void;
   killPty(tabId: string): void;
-  onPtyData(tabId: string, callback: (data: string) => void): () => void;
+  onPtyData(tabId: string, callback: (data: Uint8Array) => void): () => void;
   onPtyExit(tabId: string, callback: (code: number) => void): () => void;
 
   // Pano

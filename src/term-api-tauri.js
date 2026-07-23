@@ -8,6 +8,7 @@ const unsupported = (feature) => Promise.reject(new Error(`${feature} is not ava
 const closeRequested = new Set();
 const ptyData = new Map();
 const ptyExit = new Map();
+const ptyWrites = new Map();
 
 function subscribe(map, key, callback) {
   if (!map.has(key)) map.set(key, new Set());
@@ -38,9 +39,37 @@ function tauriWindowSubscription(register, callback) {
 async function createPty(tabId, profileKey, cols, rows, cwd) {
   const onData = new Channel();
   const onExit = new Channel();
-  onData.onmessage = (data) => emit(ptyData, tabId, data);
+  onData.onmessage = (data) => {
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    try {
+      emit(ptyData, tabId, bytes);
+    } finally {
+      invoke('pty_ack', { tabId }).catch((error) => console.warn('PTY acknowledgement failed:', error));
+    }
+  };
   onExit.onmessage = (code) => emit(ptyExit, tabId, code);
   return invoke('create_pty', { tabId, profileKey, cols, rows, cwd, onData, onExit });
+}
+
+function invokePty(command, payload) {
+  return invoke(command, payload).catch((error) => console.warn(`${command} failed:`, error));
+}
+
+function writePty(tabId, data) {
+  const write = (ptyWrites.get(tabId) || Promise.resolve())
+    .catch(noop)
+    .then(() => invoke('pty_write', { tabId, data }));
+  ptyWrites.set(tabId, write);
+  write.finally(() => {
+    if (ptyWrites.get(tabId) === write) ptyWrites.delete(tabId);
+  }).catch(noop);
+  return write.catch((error) => console.warn('pty_write failed:', error));
+}
+
+function killPty(tabId) {
+  const pending = ptyWrites.get(tabId) || Promise.resolve();
+  ptyWrites.delete(tabId);
+  return pending.catch(noop).then(() => invokePty('pty_kill', { tabId }));
 }
 
 window.termAPI = Object.freeze({
@@ -68,9 +97,9 @@ window.termAPI = Object.freeze({
   clearHistory: () => invoke('clear_history'),
 
   createPty,
-  writePty: noop,
-  resizePty: noop,
-  killPty: noop,
+  writePty,
+  resizePty: (tabId, cols, rows) => invokePty('pty_resize', { tabId, cols, rows }),
+  killPty,
   onPtyData: (tabId, callback) => subscribe(ptyData, tabId, callback),
   onPtyExit: (tabId, callback) => subscribe(ptyExit, tabId, callback),
 
