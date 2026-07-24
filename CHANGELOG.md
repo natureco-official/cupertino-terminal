@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.0 — 2026-07-24 — Electron → Tauri (Rust core + native WebView)
+
+The whole application was re-platformed from Electron to Tauri v2: a Rust core driving each
+OS's native WebView (WKWebView on macOS, WebView2 on Windows). No bundled Chromium/Electron
+runtime, node-pty, or node-datachannel — the shared xterm.js frontend now talks to Rust.
+
+### Highlights
+- **Native shell, not Electron.** ~10× smaller footprint; the built app is a single native binary.
+- **Real PTY** on `portable-pty`, streamed over a per-terminal `tauri::ipc::Channel` as raw bytes
+  with backpressure and UTF-8-boundary-safe delivery.
+- **ZeroLink reimplemented in Rust** on `webrtc-rs`, byte-compatible with the previous wire format
+  (golden-vector tested), preserving the v0.5.0 pairing-key mutual authentication. Verified with a
+  real cross-device (macOS ↔ Windows) encrypted session.
+- **Feature parity**: native macOS app menu, deep links (`terminal://`/`shell://`), NatureCo account
+  SSO (ported to Rust, sharing `~/.natureco/auth.json`), clipboard, sessions, splits, history.
+- **macOS polish**: Cmd owns app shortcuts while Ctrl passes to the shell (readline/SIGINT work),
+  configurable Option-as-Meta, native traffic lights + window dragging + vibrancy, hollow inactive
+  cursor, OSC-133/OSC-7 shell integration.
+- **Performance**: sub-frame keystroke latency (~6 ms p95), ~29 MB idle RSS, and a code-split
+  renderer (initial chunk 56 KB, down from 543 KB).
+- **Packaging + auto-update**: Tauri bundler produces `.dmg`/`.msi`/`.AppImage`; the updater checks
+  the GitHub releases `latest.json`. macOS builds are ad-hoc signed (no notarization).
+
+### Fixes found and closed during the migration
+- ZeroLink signaling datagram cap raised (1200 B → 16 KB) so real SDPs with STUN candidates connect
+  across networks. Received-filename sanitization made cross-platform (splits `/` and `\` on every
+  OS) to stay traversal-proof. Windows PTY teardown treats an already-exited child's kill error as
+  success. macOS bundle identifier moved off the `.app` suffix.
+
+### Verification
+- Every step verified on real GitHub Actions CI (MSVC + Apple Silicon `cargo check` + `cargo test`,
+  plus JS tests), a live macOS build, and a live cross-device ZeroLink session.
+
 ## 0.5.0 — 2026-07-24
 
 ### Security — critical, breaking wire-protocol change

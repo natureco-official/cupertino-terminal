@@ -2,20 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Terminal</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="single-tab">
   <!-- Title bar: traffic lights (left) + centered dynamic title + new tab (right) -->
-  <div id="titlebar">
+  <div id="titlebar" data-tauri-drag-region>
     <div id="traffic-lights">
       <button id="btn-close" class="tl tl-red" title="Close"></button>
       <button id="btn-min" class="tl tl-yellow" title="Minimize"></button>
       <button id="btn-max" class="tl tl-green" title="Zoom"></button>
     </div>
-    <div id="window-title">Terminal</div>
+    <div id="window-title" data-tauri-drag-region>Terminal</div>
     <button id="btn-new-tab" title="New tab (Ctrl+T) — right-click to choose shell">+</button>
     <button id="btn-settings" title="Settings (Ctrl+,)">&#9881;</button>
     <button id="btn-zerolink" title="ZeroLink — P2P Encrypted Terminal (Ctrl+L)">⬡</button>
@@ -222,6 +222,13 @@
               <span class="knob"></span>
             </label>
           </div>
+          <div class="settings-row mac-only-setting">
+            <label id="lbl-option-meta">Use Option as Meta</label>
+            <label class="switch">
+              <input type="checkbox" id="mac-option-meta" />
+              <span class="knob"></span>
+            </label>
+          </div>
         </div>
         <div class="settings-section">
           <h3 id="h3-shell">Shell</h3>
@@ -296,6 +303,6 @@
     </div>
   </div>
 
-  <script src="renderer.js" type="module"></script>
+  <script src="app-entry.js" type="module"></script>
 </body>
 </html>

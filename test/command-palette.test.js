@@ -13,4 +13,8 @@ test('command palette fuzzy search prioritizes strong matches', async () => {
   assert.equal(filterCommands(commands, 'sett')[0].id, 'settings');
   assert.equal(filterCommands(commands, 'pref')[0].id, 'settings');
   assert.deepEqual(filterCommands(commands, 'not-found'), []);
+  const { appModifier } = await import('../src/keymap.mjs');
+  assert.equal(appModifier({ ctrlKey: true, metaKey: false }, true), false);
+  assert.equal(appModifier({ ctrlKey: false, metaKey: true }, true), true);
+  assert.equal(appModifier({ ctrlKey: true, metaKey: false }, false), true);
 });

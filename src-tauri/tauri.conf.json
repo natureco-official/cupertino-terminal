@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Cupertino Terminal",
+  "version": "0.6.0",
+  "identifier": "me.natureco.cupertino-terminal",
+  "build": {
+    "beforeDevCommand": "npm run frontend:dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run frontend:build",
+    "frontendDist": "../dist-tauri"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Cupertino Terminal",
+        "width": 1000,
+        "height": 650,
+        "minWidth": 640,
+        "minHeight": 400,
+        "center": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "terminal",
+          "shell"
+        ]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/natureco-official/cupertino-terminal/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdEODcyN0VCRjE4OEI5MzIKUldReXVZang2eWVIZldzQUNSR2VjQUZwSzgzTHExbkxFaXRaRlNhTWpFZVVqZTUyQjhpYzRsTDkK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "longDescription": "A cross-platform terminal with a macOS-inspired interface, native PTY support, themes, and encrypted ZeroLink remote terminal sessions.",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png",
+      "icons/icon.icns"
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  }
+}

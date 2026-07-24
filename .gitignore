@@ -1,5 +1,11 @@
 node_modules/
 dist/
+dist-tauri/
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/.tauri-updater-key
+src-tauri/.tauri-updater-key.pub
+*.key
 *.log
 .codedna.db
 .DS_Store

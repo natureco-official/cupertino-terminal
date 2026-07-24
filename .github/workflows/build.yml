@@ -19,6 +19,37 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  rust-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build Tauri frontend assets
+        run: npm ci && npm run frontend:build
+
+      - name: Check Tauri Rust crate
+        working-directory: src-tauri
+        run: |
+          cargo check --target ${{ matrix.target }}
+          cargo test --target ${{ matrix.target }}
+
   verify:
     strategy:
       fail-fast: false
@@ -37,62 +68,69 @@ jobs:
         run: npm ci
 
       - name: Verify application
-        run: npm run check && npm run smoke:native && npm run smoke:app && npm run perf:pty && npm audit --audit-level=high
+        run: npm test && npm audit --audit-level=high
 
-  build:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    needs: verify
+  build-tauri:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [rust-check, verify]
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          # electron-updater icin latest.yml + .blockmap da Release'e yuklenmeli
           - os: windows-latest
-            command: npm run dist -- --publish never
-            pattern: |
-              dist/*.exe
-              dist/latest.yml
-              dist/*.blockmap
-          - os: macos-15-intel
-            command: npm run dist -- --mac --x64 --publish never
-            pattern: |
-              dist/*.dmg
+            target: x86_64-pc-windows-msvc
+            args: --config tauri.updater.conf.json
           - os: macos-15
-            command: npm run dist -- --mac --arm64 --publish never
-            pattern: |
-              dist/*.dmg
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --config tauri.updater.conf.json
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --config tauri.updater.conf.json
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            args: --config tauri.updater.conf.json
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
-      # CI'de lavamoat yok → native prebuild + electron postinstall normal çalışır
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify JavaScript and native terminal modules
-        run: npm run check && npm run smoke:native && npm run smoke:app && npm run perf:pty && npm audit --audit-level=high
-
-      - name: Build installer (electron-builder)
-        # --publish never: electron-builder yalnizca derlesin; yuklemeyi asagidaki
-        # softprops adimi (Release'e ekleme) yapar.
-        run: ${{ matrix.command }}
-        env:
-          # electron-builder'ın kod imzalamayı atlaması için (imzasız derleme)
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-
-      - name: Attach installer to Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
-        with:
-          files: ${{ matrix.pattern }}
-          fail_on_unmatched_files: false
-          generate_release_notes: true
+      - name: Build and attach Tauri installers and updater metadata
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Add the gitignored key and its out-of-band password as repo secrets.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Cupertino Terminal ${{ github.ref_name }}
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          retryAttempts: 2
+          args: ${{ matrix.args }}

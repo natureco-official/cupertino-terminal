@@ -1,14 +1,13 @@
 {
   "name": "cupertino-terminal",
   "productName": "Cupertino Terminal",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Open-source terminal that brings the macOS Terminal look to Windows, macOS and Linux — WSL/zsh, 10 themes, glass/opacity, ZeroLink P2P encrypted remote terminal (SSH-like), bilingual TR/EN UI.",
-  "main": "src/main.js",
   "author": "",
   "license": "MIT",
   "keywords": [
     "terminal",
-    "electron",
+    "tauri",
     "macos",
     "xterm",
     "wsl",
@@ -19,122 +18,35 @@
     "encrypted"
   ],
   "scripts": {
-    "start": "electron .",
+    "start": "tauri dev",
+    "frontend:dev": "vite --config vite.config.mjs",
+    "frontend:build": "vite build --config vite.config.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "clean": "node scripts/clean.js",
-    "dist": "electron-builder",
     "test": "node --test test/*.test.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && npm test",
-    "smoke:native": "electron scripts/smoke-native.js",
-    "smoke:app": "electron . --smoke-test",
-    "perf:pty": "electron scripts/benchmark-pty.js",
+    "check": "node --check src/renderer.js && npm test",
+    "smoke:tauri": "node scripts/smoke-tauri.js",
+    "perf:tauri": "node scripts/benchmark-tauri.js",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch"
   },
   "dependencies": {
-    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
-    "@xterm/xterm": "^6.0.0",
-    "electron-store": "^8.2.0",
-    "electron-updater": "^6.8.9",
-    "node-datachannel": "^0.12.0"
+    "@xterm/xterm": "^6.0.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^22.0.0",
-    "electron": "^43.1.0",
-    "electron-builder": "^26.15.3",
-    "typescript": "^5.7.0"
-  },
-  "build": {
-    "appId": "com.cupertinoterminal.app",
-    "productName": "Cupertino Terminal",
-    "npmRebuild": false,
-    "afterPack": "build/afterPack.js",
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "natureco-official",
-        "repo": "cupertino-terminal"
-      }
-    ],
-    "asarUnpack": [
-      "node_modules/@homebridge/node-pty-prebuilt-multiarch/**",
-      "node_modules/node-datachannel/**",
-      "src/shell-integration/**"
-    ],
-    "files": [
-      "src/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "identity": null,
-      "protocols": [
-        {
-          "name": "Terminal URL",
-          "schemes": [
-            "terminal",
-            "shell"
-          ]
-        }
-      ],
-      "extendInfo": {
-        "NSServices": [
-          {
-            "NSMenuItem": {
-              "default": "Cupertino Terminalde Ac"
-            },
-            "NSMessage": "openFile",
-            "NSPortName": "Cupertino Terminal",
-            "NSSendTypes": [
-              "public.file-url"
-            ]
-          }
-        ]
-      }
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "src/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
-    },
-    "nsis": {
-      "include": "build/installer.nsh",
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Cupertino Terminal",
-      "runAfterFinish": true
-    },
-    "dmg": {
-      "title": "Cupertino Terminal",
-      "icon": "build/icon.png",
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Utility",
-      "icon": "build/icon.png"
-    }
+    "typescript": "^5.7.0",
+    "vite": "^7.3.6"
   }
 }

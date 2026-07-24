@@ -185,7 +185,13 @@ html:has(body.maximized) { border-radius: 0; }
 .command-palette-item.selected { background: #3478f6; color: #fff; }
 .command-palette-item kbd { opacity: 0.65; font: 11px var(--font-ui); }
 #command-palette-empty { padding: 24px; text-align: center; color: var(--tab-inactive-fg); }
-body.platform-mac #traffic-lights { visibility: hidden; width: 54px; }
+body.platform-mac.platform-tauri.fullscreen #traffic-lights {
+  visibility: hidden;
+  width: 0;
+  gap: 0;
+}
+.mac-only-setting { display: none; }
+body.platform-mac .mac-only-setting { display: flex; }
 
 .tl {
   width: 12px;

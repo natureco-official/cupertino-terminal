@@ -2,7 +2,7 @@
 
 > 🇬🇧 [English](README.md)
 
-Cupertino Terminal, geliştirici özelliklerinden ödün vermeden özenli bir macOS terminal deneyimi sunan, Windows ve macOS üzerinde çalışan açık kaynaklı bir terminal uygulamasıdır. Electron, xterm.js ve node-pty ile geliştirilmiştir.
+Cupertino Terminal, geliştirici özelliklerinden ödün vermeden özenli bir macOS terminal deneyimi sunan, Windows, macOS ve Linux üzerinde çalışan açık kaynaklı bir terminal uygulamasıdır. Tauri, Rust ve xterm.js ile geliştirilmiştir.
 
 ![Cupertino Terminal](docs/screenshot.png)
 

@@ -29,7 +29,7 @@ echo ""
 if [ ! -d "$APP_PATH" ]; then
   echo "❌  $APP_PATH bulunamadı!"
   echo "   Önce uygulamayı /Applications klasörüne kur:"
-  echo "   cp -R \"$REPO_DIR/dist/mac-arm64/Cupertino Terminal.app\" /Applications/"
+  echo "   cp -R \"$REPO_DIR/src-tauri/target/release/bundle/macos/Cupertino Terminal.app\" /Applications/"
   exit 1
 fi
 echo "✅  Uygulama: $APP_PATH"
