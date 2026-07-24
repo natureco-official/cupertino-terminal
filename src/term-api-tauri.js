@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { open } from '@tauri-apps/plugin-dialog';
 
 const appWindow = getCurrentWindow();
 const noop = () => {};
@@ -11,6 +12,14 @@ const closeRequested = new Set();
 const ptyData = new Map();
 const ptyExit = new Map();
 const ptyWrites = new Map();
+
+listen('zl:client:data', ({ payload }) => {
+  if (!payload?.tabId) return;
+  const bytes = payload.data instanceof Uint8Array
+    ? payload.data
+    : new Uint8Array(payload.data || []);
+  emit(ptyData, payload.tabId, bytes);
+}).catch((error) => console.warn('ZeroLink data subscription failed:', error));
 
 function subscribe(map, key, callback) {
   if (!map.has(key)) map.set(key, new Set());
@@ -163,30 +172,40 @@ window.termAPI = Object.freeze({
 
   completeSmokeTest: (result) => invoke('complete_smoke_test', { result }),
 
-  zlHostStart: () => unsupported('ZeroLink'),
-  zlHostStop: noop,
-  zlClientConnect: () => unsupported('ZeroLink'),
-  zlClientSend: noop,
-  zlClientResize: noop,
-  zlClientDisconnect: noop,
-  zlClientPushFile: () => unsupported('ZeroLink file transfer'),
-  zlClientPullFile: () => unsupported('ZeroLink file transfer'),
-  zlClientForwardAdd: () => unsupported('ZeroLink port forwarding'),
-  zlClientForwardRemove: noop,
-  onZlClientFileProgress: noopSubscription,
-  onZlClientFileDone: noopSubscription,
-  onZlClientFileError: noopSubscription,
-  onZlClientForwardOpen: noopSubscription,
-  onZlClientForwardError: noopSubscription,
-  onZlHostCode: noopSubscription,
-  onZlHostTimer: noopSubscription,
-  onZlHostExpired: noopSubscription,
-  onZlHostConnected: noopSubscription,
-  onZlHostSession: noopSubscription,
-  onZlHostFile: noopSubscription,
-  onZlHostDisconnected: noopSubscription,
-  onZlClientConnected: noopSubscription,
-  onZlClientRemoteExit: noopSubscription,
-  onZlClientDisconnected: noopSubscription,
-  onZlError: noopSubscription,
+  zlHostStart: (tabId) => invoke('zl_host_start', { tabId }),
+  zlHostStop: () => invoke('zl_host_stop').catch((error) => console.warn(error)),
+  zlClientConnect: (code, tabId) => invoke('zl_client_connect', { code, tabId }),
+  zlClientSend: (data) => invoke('zl_client_send', { data }).catch((error) => console.warn(error)),
+  zlClientResize: (cols, rows) => invoke('zl_client_resize', { cols, rows }).catch((error) => console.warn(error)),
+  zlClientDisconnect: () => invoke('zl_client_disconnect').catch((error) => console.warn(error)),
+  zlClientPushFile: async () => {
+    const path = await open({ multiple: false, directory: false });
+    if (!path) return { canceled: true };
+    return invoke('zl_client_push_file', { path });
+  },
+  zlClientPullFile: (remotePath) => invoke('zl_client_pull_file', { remotePath }),
+  zlClientForwardAdd: (localPort, remoteHost, remotePort) => invoke('zl_client_forward_add', {
+    localPort: Number(localPort),
+    remoteHost,
+    remotePort: Number(remotePort),
+  }),
+  zlClientForwardRemove: (localPort) => invoke('zl_client_forward_remove', {
+    localPort: Number(localPort),
+  }).catch((error) => console.warn(error)),
+  onZlClientFileProgress: (callback) => tauriEventSubscription('zl:client:file-progress', callback),
+  onZlClientFileDone: (callback) => tauriEventSubscription('zl:client:file-done', callback),
+  onZlClientFileError: (callback) => tauriEventSubscription('zl:client:file-error', callback),
+  onZlClientForwardOpen: (callback) => tauriEventSubscription('zl:client:forward-open', callback),
+  onZlClientForwardError: (callback) => tauriEventSubscription('zl:client:forward-error', callback),
+  onZlHostCode: (callback) => tauriEventSubscription('zl:host:code', callback),
+  onZlHostTimer: (callback) => tauriEventSubscription('zl:host:timer', callback),
+  onZlHostExpired: (callback) => tauriEventSubscription('zl:host:expired', callback),
+  onZlHostConnected: (callback) => tauriEventSubscription('zl:host:connected', callback),
+  onZlHostSession: (callback) => tauriEventSubscription('zl:host:session', callback),
+  onZlHostFile: (callback) => tauriEventSubscription('zl:host:file', callback),
+  onZlHostDisconnected: (callback) => tauriEventSubscription('zl:host:disconnected', callback),
+  onZlClientConnected: (callback) => tauriEventSubscription('zl:client:connected', callback),
+  onZlClientRemoteExit: (callback) => tauriEventSubscription('zl:client:remote-exit', callback),
+  onZlClientDisconnected: (callback) => tauriEventSubscription('zl:client:disconnected', callback),
+  onZlError: (callback) => tauriEventSubscription('zl:error', callback),
 });

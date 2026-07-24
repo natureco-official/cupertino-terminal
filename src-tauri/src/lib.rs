@@ -1,12 +1,15 @@
 #[cfg_attr(test, allow(dead_code))]
 mod account;
 mod pty;
+#[cfg_attr(test, allow(dead_code))]
+mod zerolink;
 
 #[cfg(not(test))]
 mod app {
     use super::{
         account::{AccountEmail, AccountError, AccountService, AccountStatus},
         pty::{self, PtyState},
+        zerolink::{self, ZeroLinkState},
     };
     use percent_encoding::percent_decode_str;
     use serde_json::{json, Map, Value};
@@ -431,6 +434,7 @@ mod app {
                 focus_main_window(app);
             }))
             .plugin(tauri_plugin_clipboard_manager::init())
+            .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_deep_link::init());
         #[cfg(target_os = "macos")]
         {
@@ -460,6 +464,7 @@ mod app {
                     smoke_test,
                 });
                 app.manage(AccountService::from_environment());
+                app.manage(ZeroLinkState::default());
                 let pty_state = PtyState::default();
                 if let Some(window) = app.get_webview_window("main") {
                     if smoke_test {
@@ -531,6 +536,16 @@ mod app {
                 nc_account_password,
                 nc_account_logout,
                 complete_smoke_test,
+                zerolink::zl_host_start,
+                zerolink::zl_host_stop,
+                zerolink::zl_client_connect,
+                zerolink::zl_client_send,
+                zerolink::zl_client_resize,
+                zerolink::zl_client_push_file,
+                zerolink::zl_client_pull_file,
+                zerolink::zl_client_forward_add,
+                zerolink::zl_client_forward_remove,
+                zerolink::zl_client_disconnect,
             ])
             .run(tauri::generate_context!())
             .expect("error while running Cupertino Terminal");

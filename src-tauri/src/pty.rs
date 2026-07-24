@@ -53,11 +53,15 @@ struct PtyHandle {
     process_group: Option<libc::pid_t>,
 }
 
-trait OutputSink: Send + Sync {
+pub(crate) trait OutputSink: Send + Sync {
     fn send(&self, bytes: Vec<u8>) -> Result<(), ()>;
+
+    fn auto_acknowledge(&self) -> bool {
+        false
+    }
 }
 
-trait ExitSink: Send + Sync {
+pub(crate) trait ExitSink: Send + Sync {
     fn send(&self, code: i32);
 }
 
@@ -103,7 +107,7 @@ struct ShellLaunch {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyInfo {
-    pid: Option<u32>,
+    pub(crate) pid: Option<u32>,
     shell_name: &'static str,
     cwd: String,
 }
@@ -373,6 +377,71 @@ impl PtyState {
             cwd: launch.cwd.to_string_lossy().into_owned(),
         })
     }
+
+    pub(crate) fn spawn_zerolink(
+        &self,
+        session_id: String,
+        cols: u16,
+        rows: u16,
+        on_data: Arc<dyn OutputSink>,
+        on_exit: Arc<dyn ExitSink>,
+    ) -> Result<PtyInfo, String> {
+        validate_tab_id(&session_id)?;
+        self.spawn(
+            session_id,
+            profile("auto", home_dir())?,
+            cols.clamp(1, 1000),
+            rows.clamp(1, 500),
+            on_data,
+            on_exit,
+        )
+    }
+
+    pub(crate) fn write_zerolink(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        if data.len() > MAX_WRITE_BYTES {
+            return Err(format!("PTY write exceeds {MAX_WRITE_BYTES} bytes"));
+        }
+        let handle = lock(&self.registry.ptys)
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| "PTY not found".to_string())?;
+        let mut writer = lock(&handle.writer);
+        let writer = writer
+            .as_mut()
+            .ok_or_else(|| "PTY writer is closed".to_string())?;
+        writer
+            .write_all(data)
+            .and_then(|()| writer.flush())
+            .map_err(|error| format!("PTY write failed: {error}"))
+    }
+
+    pub(crate) fn resize_zerolink(
+        &self,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
+        let handle = lock(&self.registry.ptys)
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| "PTY not found".to_string())?;
+        let master = lock(&handle.master);
+        let master = master.as_ref().ok_or_else(|| "PTY is closed".to_string())?;
+        master
+            .resize(PtySize {
+                cols: cols.clamp(1, 1000),
+                rows: rows.clamp(1, 500),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|error| format!("PTY resize failed: {error}"))
+    }
+
+    pub(crate) fn kill_zerolink(&self, session_id: &str) {
+        if let Some(handle) = self.remove(session_id) {
+            let _ = handle.terminate_and_join();
+        }
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -472,6 +541,9 @@ fn send_batch(batch: Vec<u8>, on_data: &dyn OutputSink, handle: &PtyHandle) -> b
         handle.flow.acknowledge();
         handle.shutdown.store(true, Ordering::Release);
         return false;
+    }
+    if on_data.auto_acknowledge() {
+        handle.flow.acknowledge();
     }
     true
 }
