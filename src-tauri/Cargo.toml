@@ -30,7 +30,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
 subtle = "2.6"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
@@ -41,13 +41,6 @@ webrtc = "0.14"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-# macOS enables the private-API window vibrancy/transparency declared in
-# tauri.macos.conf.json (macOSPrivateApi). Cargo unions this with the base
-# tauri feature set, so the feature is present ONLY on macOS — matching the
-# per-platform tauri.conf allowlist and keeping Windows/Linux builds clean.
-[target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
