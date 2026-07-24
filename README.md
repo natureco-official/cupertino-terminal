@@ -2,7 +2,7 @@
 
 > 🇹🇷 [Türkçe](README.tr.md)
 
-A cross-platform terminal focused on a polished macOS-style experience without giving up practical developer features. Cupertino Terminal runs on Windows and macOS and is built with Electron, xterm.js and node-pty.
+A cross-platform terminal focused on a polished macOS-style experience without giving up practical developer features. Cupertino Terminal runs on Windows, macOS and Linux and is built with Tauri, Rust and xterm.js.
 
 ![Cupertino Terminal](docs/screenshot.png)
 

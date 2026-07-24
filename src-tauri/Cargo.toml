@@ -4,6 +4,7 @@ version = "0.5.0"
 description = "Cupertino Terminal Tauri shell"
 authors = ["NatureCo"]
 edition = "2021"
+default-run = "cupertino-terminal"
 
 [lib]
 name = "cupertino_terminal_lib"

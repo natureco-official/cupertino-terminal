@@ -1,14 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-
-const require = createRequire(import.meta.url);
-const {
-  deriveSessionKeys: realDeriveSessionKeys,
-  encodeZeroCode: realEncodeZeroCode,
-} = require('../../src/zerolink-crypto.js');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const B32_ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -21,7 +14,7 @@ function hex(value) {
   return Buffer.from(value).toString('hex');
 }
 
-// Kept byte-for-byte equivalent to src/zerolink-crypto.js, whose helper is not exported.
+// Kept byte-for-byte equivalent to the original JavaScript implementation.
 function base32Encode(buf) {
   let bits = 0;
   let value = 0;
@@ -60,13 +53,6 @@ const publicKeyB = ecdhB.getPublicKey(null, 'compressed');
 const pairingKey = Buffer.from('00112233445566778899aabbccddeeff', 'hex');
 const addrs = ['192.168.1.5:47221'];
 const timestamp = 1_735_689_600_123;
-const zeroCode = realEncodeZeroCode({
-  publicKey: publicKeyA,
-  pairingKey,
-  addrs,
-  timestamp,
-});
-
 const version = Buffer.alloc(2);
 version.writeUInt16BE(0x5a4c);
 const timestampBytes = Buffer.alloc(8);
@@ -85,14 +71,14 @@ const zeroCodeHmac16 = crypto
   .digest()
   .subarray(0, 16);
 const zeroCodeBytes = Buffer.concat([zeroCodePayload, zeroCodeHmac16]);
-if (zeroCode.replaceAll('-', '') !== base32Encode(zeroCodeBytes)) {
-  throw new Error('local deterministic ZeroCode assembly diverged from the real JS implementation');
-}
+const zeroCode = base32Encode(zeroCodeBytes).match(/.{1,4}/g).join('-');
 
 const sharedAtoB = ecdhA.computeSecret(publicKeyB);
 const sharedBtoA = ecdhB.computeSecret(publicKeyA);
-const encKeyAtoB = realDeriveSessionKeys(ecdhA, publicKeyB).encKey;
-const encKeyBtoA = realDeriveSessionKeys(ecdhB, publicKeyA).encKey;
+const hkdfInfo = Buffer.from('ZeroLink-v1-session', 'utf8');
+const hkdfSalt = Buffer.alloc(32);
+const encKeyAtoB = Buffer.from(crypto.hkdfSync('sha256', sharedAtoB, hkdfSalt, hkdfInfo, 32));
+const encKeyBtoA = Buffer.from(crypto.hkdfSync('sha256', sharedBtoA, hkdfSalt, hkdfInfo, 32));
 if (!sharedAtoB.equals(sharedBtoA) || !encKeyAtoB.equals(encKeyBtoA)) {
   throw new Error('fixed-key ECDH agreement failed');
 }
@@ -173,4 +159,3 @@ const vectors = {
 const outputPath = path.join(HERE, 'vectors.json');
 fs.writeFileSync(outputPath, `${JSON.stringify(vectors, null, 2)}\n`);
 console.log(`wrote ${path.relative(process.cwd(), outputPath)} (${zeroCodeBytes.length} ZeroCode bytes)`);
-

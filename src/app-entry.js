@@ -1,5 +1,4 @@
-// This entry is shared by both shells. Electron keeps using its preload bridge;
-// Tauri installs the equivalent facade before the existing renderer is evaluated.
+// Install the Tauri facade before the existing renderer is evaluated.
 (async () => {
   if (window.__TAURI_INTERNALS__) {
     await import('./term-api-tauri.js');

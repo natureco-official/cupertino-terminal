@@ -486,7 +486,7 @@ function applyLanguage() {
   set('#nc-eco-dev', 'textContent', L.accEcoDev);
 }
 
-// ---- Ayarlar (macOS Terminal Settings muadili; electron-store'da kalici) ----
+// ---- Ayarlar (macOS Terminal Settings muadili; Tauri backend'inde kalici) ----
 const DEFAULT_SETTINGS = {
   profile: 'natureco',
   fontSize: 13,        // macOS Terminal varsayilanina yakin
@@ -1086,7 +1086,6 @@ async function createTab(profileKey = 'default', cwd = null) {
       }
 
       // Tauri reads its clipboard explicitly and lets xterm encode bracketed paste.
-      // Electron keeps its existing single native Chromium paste event.
       if (k === 'v') {
         if (isTauri) {
           e.preventDefault();
@@ -1873,7 +1872,7 @@ document.getElementById('zl-back-btn').addEventListener('click', () => {
   const curVer = document.getElementById('cur-version');
   const getBtn = document.getElementById('up-get');
   let updateUrl = null;     // Mac/Linux: installer indirme linki
-  let mode = 'link';        // 'link' (Mac/Linux tek-tık indir) | 'silent' (Windows electron-updater)
+  let mode = 'link';        // 'link' (manual installer) | 'silent' (Tauri updater)
   const L = () => LANGS[settings.lang] || LANGS.en;
   const showPill = (text, btnLabel, btnEnabled = true) => {
     if (upText) upText.textContent = text;

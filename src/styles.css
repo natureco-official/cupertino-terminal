@@ -185,8 +185,6 @@ html:has(body.maximized) { border-radius: 0; }
 .command-palette-item.selected { background: #3478f6; color: #fff; }
 .command-palette-item kbd { opacity: 0.65; font: 11px var(--font-ui); }
 #command-palette-empty { padding: 24px; text-align: center; color: var(--tab-inactive-fg); }
-/* Electron supplies native inset controls. Frameless Tauri keeps the custom set. */
-body.platform-mac:not(.platform-tauri) #traffic-lights { visibility: hidden; width: 54px; }
 body.platform-mac.platform-tauri.fullscreen #traffic-lights {
   visibility: hidden;
   width: 0;

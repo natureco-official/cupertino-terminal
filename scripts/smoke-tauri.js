@@ -30,7 +30,11 @@ function run(command, args, options = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run(process.execPath, [path.join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js'), 'build']);
+run(process.execPath, [
+  path.join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js'),
+  'build',
+  '--no-bundle',
+]);
 
 const executable = path.join(
   root,

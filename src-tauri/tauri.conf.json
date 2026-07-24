@@ -53,7 +53,7 @@
     "targets": "all",
     "category": "DeveloperTool",
     "longDescription": "A cross-platform terminal with a macOS-inspired interface, native PTY support, themes, and encrypted ZeroLink remote terminal sessions.",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/icon.ico",
       "icons/icon.png",
