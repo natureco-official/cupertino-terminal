@@ -232,17 +232,16 @@ pub fn file_error(id: u32, message: &str) -> Vec<u8> {
 }
 
 fn safe_basename(name: &str, id: u32) -> String {
-    let basename = Path::new(name)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("");
+    // Split on BOTH path separators regardless of host OS. Path::file_name() only splits on the
+    // platform separator, so on Unix (where `\` is a valid filename byte) a Windows-style
+    // `..\..\evil.txt` would keep its traversal prefix. Handling both makes the sanitization
+    // identical and traversal-proof on every platform (defense in depth for peer-supplied names).
+    let basename = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let safe = basename
         .chars()
         .map(|character| {
-            if matches!(
-                character,
-                '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'
-            ) || character.is_control()
+            if matches!(character, ':' | '*' | '?' | '"' | '<' | '>' | '|')
+                || character.is_control()
             {
                 '_'
             } else {
