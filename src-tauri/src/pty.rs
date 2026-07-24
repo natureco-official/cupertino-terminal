@@ -475,6 +475,12 @@ fn kill_error_is_gone(error: &std::io::Error) -> bool {
     if error.raw_os_error() == Some(libc::ESRCH) {
         return true;
     }
+    // Windows: killing a child that already exited returns ERROR_INVALID_HANDLE (6) or
+    // ERROR_ACCESS_DENIED (5) — for a child we own both mean "already gone", so teardown is a no-op.
+    #[cfg(windows)]
+    if matches!(error.raw_os_error(), Some(5) | Some(6)) {
+        return true;
+    }
     false
 }
 
