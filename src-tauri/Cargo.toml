@@ -1,6 +1,6 @@
 [package]
 name = "cupertino-terminal"
-version = "0.6.0"
+version = "0.6.1"
 description = "Cupertino Terminal Tauri shell"
 authors = ["NatureCo"]
 edition = "2021"

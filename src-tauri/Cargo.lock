@@ -1058,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "cupertino-terminal"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aes-gcm 0.11.0",
  "anyhow",

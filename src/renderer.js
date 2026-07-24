@@ -736,7 +736,10 @@ window.termAPI.onCloseRequested(() => {
 document.getElementById('btn-min').addEventListener('click', () => window.termAPI.minimize());
 document.getElementById('btn-max').addEventListener('click', () => window.termAPI.maximize());
 function activeCwd() { return tabs.get(activeTabId)?.shellState?.cwd || null; }
-function createTabAtActiveCwd(profileKey = 'default') { return createTab(profileKey, activeCwd()); }
+// Yeni sekmeler kullanicinin Ayarlar'daki varsayilan kabugunu kullanir (bos/gecersizse "auto").
+// "auto" Rust tarafinda isletim sisteminin oturum kabuguna cozulur (mac: $SHELL, Win: WSL varsa WSL).
+function defaultShellKey() { return settings.shell || 'auto'; }
+function createTabAtActiveCwd(profileKey = defaultShellKey()) { return createTab(profileKey, activeCwd()); }
 function handleTerminalInput(rec, data) {
   const captured = consumePromptInput(rec.inputBuffer, data, rec.shellState.atPrompt);
   rec.inputBuffer = captured.buffer;
@@ -769,7 +772,7 @@ async function splitActive(direction = 'vertical', options = {}) {
   const root = tabs.get(rootId);
   if (!root || root.splitChildId) return;
   const cwd = options.cwd || activeCwd();
-  const profileKey = options.profileKey || tabs.get(activeTabId)?.profileKey || 'default';
+  const profileKey = options.profileKey || tabs.get(activeTabId)?.profileKey || defaultShellKey();
   await createTab(profileKey, cwd);
   const childId = activeTabId;
   const child = tabs.get(childId);
@@ -835,7 +838,7 @@ if (isTauri) {
     window.termAPI.maximize?.();
   });
 }
-window.termAPI.onOpenDirectory((cwd) => createTab('default', cwd));
+window.termAPI.onOpenDirectory((cwd) => createTab(defaultShellKey(), cwd));
 window.termAPI.onNewTab(() => createTabAtActiveCwd());
 window.termAPI.onCloseTab(() => { if (activeTabId) closeTab(activeTabId); });
 window.termAPI.onShowSettings(() => openSettings());
@@ -2078,7 +2081,7 @@ async function boot() {
   if (performanceTest) {
     await createTab(isTauri && navigator.platform.startsWith('Win') ? 'powershell' : 'default');
   } else if (bootContext?.cwd) {
-    await createTab('default', bootContext.cwd);
+    await createTab(defaultShellKey(), bootContext.cwd);
   } else if (session.tabs.length) {
     restoringSession = true;
     const restoredIds = new Array(session.tabs.length);

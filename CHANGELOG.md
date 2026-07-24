@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1 — 2026-07-24
+
+### Fixed
+- **New tabs ignored the default-shell preference.** Choosing bash or fish (macOS) — or
+  PowerShell/cmd/WSL (Windows) — in Settings had no effect: every new tab still opened the OS
+  login shell (zsh on macOS). New tabs hard-coded the `"default"` profile key and never read
+  `settings.shell`, so the preference was saved but never sent to the PTY. New tabs, splits, the
+  new-tab menu/shortcut, and directory-open launches now all honor the saved default shell
+  (`"auto"` still resolves to the OS login shell). No wire/Rust change — the Rust `profile()`
+  resolver already mapped `bash`/`fish`/`powershell`/`cmd`/`wsl` correctly.
+
 ## 0.6.0 — 2026-07-24 — Electron → Tauri (Rust core + native WebView)
 
 The whole application was re-platformed from Electron to Tauri v2: a Rust core driving each
