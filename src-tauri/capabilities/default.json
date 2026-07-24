@@ -13,7 +13,8 @@
     "core:window:allow-toggle-maximize",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "deep-link:default"
-    ,"dialog:allow-open"
+    "deep-link:default",
+    "dialog:allow-open",
+    "updater:default"
   ]
 }

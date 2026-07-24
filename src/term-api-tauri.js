@@ -3,15 +3,18 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { open } from '@tauri-apps/plugin-dialog';
+import { check as checkForUpdate } from '@tauri-apps/plugin-updater';
 
 const appWindow = getCurrentWindow();
 const noop = () => {};
-const noopSubscription = () => noop;
 const unsupported = (feature) => Promise.reject(new Error(`${feature} arrives in a later Tauri build`));
 const closeRequested = new Set();
 const ptyData = new Map();
 const ptyExit = new Map();
 const ptyWrites = new Map();
+const updateEvents = new Map();
+let pendingUpdate = null;
+let updaterTask = null;
 
 listen('zl:client:data', ({ payload }) => {
   if (!payload?.tabId) return;
@@ -96,6 +99,67 @@ function killPty(tabId) {
   return pending.catch(noop).then(() => invokePty('pty_kill', { tabId }));
 }
 
+function emitUpdate(eventName, payload) {
+  emit(updateEvents, eventName, payload);
+}
+
+function runUpdateCheck(manual = false) {
+  if (updaterTask) return updaterTask;
+  updaterTask = (async () => {
+    if (pendingUpdate) {
+      await pendingUpdate.close();
+      pendingUpdate = null;
+    }
+
+    const update = await checkForUpdate();
+    if (!update) {
+      if (manual) emitUpdate('none', {});
+      return;
+    }
+
+    pendingUpdate = update;
+    emitUpdate('available', { version: update.version, url: null, silent: true });
+
+    let downloaded = 0;
+    let contentLength = 0;
+    await update.download((event) => {
+      if (event.event === 'Started') {
+        contentLength = event.data.contentLength || 0;
+        emitUpdate('progress', { percent: 0 });
+      } else if (event.event === 'Progress') {
+        downloaded += event.data.chunkLength;
+        const percent = contentLength
+          ? Math.max(0, Math.min(100, Math.round((downloaded / contentLength) * 100)))
+          : 0;
+        emitUpdate('progress', { percent });
+      } else if (event.event === 'Finished') {
+        emitUpdate('progress', { percent: 100 });
+      }
+    });
+    emitUpdate('downloaded', { version: update.version });
+  })().catch((error) => {
+    console.warn('Tauri updater failed:', error);
+    if (manual) emitUpdate('error', { message: String(error?.message || error) });
+  }).finally(() => {
+    updaterTask = null;
+  });
+  return updaterTask;
+}
+
+async function installUpdate() {
+  if (!pendingUpdate) {
+    emitUpdate('error', { message: 'There is no downloaded update to install.' });
+    return;
+  }
+  try {
+    await pendingUpdate.install();
+    await invoke('relaunch_app');
+  } catch (error) {
+    console.warn('Tauri update installation failed:', error);
+    emitUpdate('error', { message: String(error?.message || error) });
+  }
+}
+
 window.termAPI = Object.freeze({
   minimize: () => appWindow.minimize(),
   maximize: () => appWindow.toggleMaximize(),
@@ -144,13 +208,13 @@ window.termAPI = Object.freeze({
     console.warn('NatureCo account logout failed:', error);
   }),
 
-  checkForUpdates: noop,
-  installUpdate: noop,
-  onUpdateAvailable: noopSubscription,
-  onUpdateProgress: noopSubscription,
-  onUpdateDownloaded: noopSubscription,
-  onUpdateNone: noopSubscription,
-  onUpdateError: noopSubscription,
+  checkForUpdates: () => runUpdateCheck(true),
+  installUpdate,
+  onUpdateAvailable: (callback) => subscribe(updateEvents, 'available', callback),
+  onUpdateProgress: (callback) => subscribe(updateEvents, 'progress', callback),
+  onUpdateDownloaded: (callback) => subscribe(updateEvents, 'downloaded', callback),
+  onUpdateNone: (callback) => subscribe(updateEvents, 'none', callback),
+  onUpdateError: (callback) => subscribe(updateEvents, 'error', callback),
 
   onFocusChange: (callback) => tauriWindowSubscription(
     (handler) => appWindow.onFocusChanged(handler),
@@ -219,3 +283,5 @@ window.termAPI = Object.freeze({
   onZlClientDisconnected: (callback) => tauriEventSubscription('zl:client:disconnected', callback),
   onZlError: (callback) => tauriEventSubscription('zl:error', callback),
 });
+
+setTimeout(() => runUpdateCheck(false), 4000);
