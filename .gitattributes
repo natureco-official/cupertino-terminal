@@ -1,0 +1,7 @@
+# Shell scripts must keep LF endings so `curl ... | sh` works on macOS/Linux
+# even when checked out on Windows (core.autocrlf=true).
+*.sh text eol=lf
+install.sh text eol=lf
+
+# PowerShell scripts are fine with either, but keep them consistent.
+*.ps1 text eol=crlf

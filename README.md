@@ -19,9 +19,27 @@ Most "modern" terminals ship an entire Chromium browser and a Node runtime just 
 
 If you live in a terminal, this is the one you'll want open all day.
 
+## Install in one command
+
+One line, any machine — it detects your OS and CPU, downloads the right signed installer, and gets you running. Hand this repo to an AI agent and say "install this," and it will do exactly the same (see [AGENTS.md](AGENTS.md)).
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/natureco-official/cupertino-terminal/main/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/natureco-official/cupertino-terminal/main/install.ps1 | iex
+```
+
+No admin, no build tools, no `jq` — just `curl`/PowerShell. On macOS it also clears the Gatekeeper quarantine flag for you and launches the app.
+
 ## Download
 
-Grab the latest installer from **[GitHub Releases](https://github.com/natureco-official/cupertino-terminal/releases/latest)** — under a minute to install.
+Prefer to install by hand? Grab the latest installer from **[GitHub Releases](https://github.com/natureco-official/cupertino-terminal/releases/latest)** — under a minute to install.
 
 | Platform | Package |
 |---|---|

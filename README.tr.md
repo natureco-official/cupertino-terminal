@@ -19,9 +19,27 @@
 
 Gününüzü terminalde geçiriyorsanız, gün boyu açık tutmak isteyeceğiniz terminal budur.
 
+## Tek komutla kurulum
+
+Tek satır, her makine — işletim sistemini ve işlemcini algılar, doğru imzalı kurucuyu indirir ve çalışır hale getirir. Bu repoyu bir AI ajanına verip "bunu kur" demen de aynı sonucu verir (bkz. [AGENTS.md](AGENTS.md)).
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/natureco-official/cupertino-terminal/main/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/natureco-official/cupertino-terminal/main/install.ps1 | iex
+```
+
+Yönetici yetkisi yok, derleme aracı yok, `jq` yok — sadece `curl`/PowerShell. macOS'ta Gatekeeper karantina bayrağını da senin için temizler ve uygulamayı başlatır.
+
 ## İndirme
 
-Güncel kurulum dosyasını **[GitHub Releases](https://github.com/natureco-official/cupertino-terminal/releases/latest)** sayfasından indirin — kurulum bir dakikadan kısa.
+Elle kurmayı mı tercih edersin? Güncel kurulum dosyasını **[GitHub Releases](https://github.com/natureco-official/cupertino-terminal/releases/latest)** sayfasından indir — kurulum bir dakikadan kısa.
 
 | Platform | Paket |
 |---|---|
