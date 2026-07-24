@@ -18,7 +18,12 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
 
 pub const SIGNAL_PORT: u16 = 47_221;
-pub const SAFE_DATAGRAM_BYTES: usize = 1_200;
+// A WebRTC SDP offer/answer carrying STUN server-reflexive candidates runs ~1.4 KB (and larger with
+// TURN). The old 1200-byte "avoid IP fragmentation" cap silently DROPPED real cross-network signals,
+// so a host/client on different networks could never connect. Signaling is low-volume and retried
+// (hellos repeat), so a generous cap with IP fragmentation tolerated is the correct trade-off; the
+// cap still bounds a malicious peer's datagram size.
+pub const SAFE_DATAGRAM_BYTES: usize = 16 * 1024;
 const ICE_WAIT: Duration = Duration::from_secs(8);
 const STUN_WAIT: Duration = Duration::from_secs(5);
 
@@ -428,7 +433,7 @@ pub fn parse_stun_response(message: &[u8]) -> Option<String> {
 pub fn decode_signal(bytes: &[u8]) -> anyhow::Result<Signal> {
     ensure!(
         bytes.len() <= SAFE_DATAGRAM_BYTES,
-        "signaling datagram exceeds 1200-byte limit"
+        "signaling datagram exceeds the {SAFE_DATAGRAM_BYTES}-byte limit"
     );
     Ok(serde_json::from_slice(bytes)?)
 }
@@ -441,7 +446,7 @@ pub async fn send_signal(
     let bytes = serde_json::to_vec(signal)?;
     ensure!(
         bytes.len() <= SAFE_DATAGRAM_BYTES,
-        "signaling JSON is {} bytes; safe UDP limit is {SAFE_DATAGRAM_BYTES} bytes",
+        "signaling JSON is {} bytes; UDP limit is {SAFE_DATAGRAM_BYTES} bytes",
         bytes.len()
     );
     socket.send_to(&bytes, destination).await?;

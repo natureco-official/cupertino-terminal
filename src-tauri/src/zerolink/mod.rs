@@ -21,6 +21,7 @@ mod service {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::{mpsc, oneshot};
+    use tokio::task::JoinHandle;
     use tokio::time::{interval, Duration};
 
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -88,6 +89,42 @@ mod service {
         ForwardError(u16, String),
     }
 
+    pub struct HeadlessHost {
+        code: String,
+        cancel: Option<oneshot::Sender<()>>,
+        task: Option<JoinHandle<anyhow::Result<()>>>,
+    }
+
+    impl HeadlessHost {
+        pub fn code(&self) -> &str {
+            &self.code
+        }
+
+        pub async fn serve_for(mut self, duration: Duration) -> anyhow::Result<()> {
+            let mut task = self.task.take().context("host task missing")?;
+            tokio::select! {
+                result = &mut task => result.context("host task failed")?,
+                _ = tokio::time::sleep(duration) => {
+                    if let Some(cancel) = self.cancel.take() {
+                        let _ = cancel.send(());
+                    }
+                    task.await.context("host task failed")?
+                }
+            }
+        }
+    }
+
+    impl Drop for HeadlessHost {
+        fn drop(&mut self) {
+            if let Some(cancel) = self.cancel.take() {
+                let _ = cancel.send(());
+            }
+            if let Some(task) = self.task.take() {
+                task.abort();
+            }
+        }
+    }
+
     fn now_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -99,6 +136,33 @@ mod service {
         let _ = app.emit(event, payload);
     }
 
+    async fn prepare_host(
+        include_loopback: bool,
+    ) -> anyhow::Result<(
+        String,
+        Peer,
+        mpsc::UnboundedReceiver<PeerEvent>,
+        Arc<tokio::net::UdpSocket>,
+    )> {
+        let socket = peer::bind_signal(peer::SIGNAL_PORT).await?;
+        let port = socket.local_addr()?.port();
+        let mut addrs = peer::local_addresses(port);
+        if include_loopback {
+            addrs.insert(0, format!("127.0.0.1:{port}"));
+            addrs.dedup();
+        }
+        if let Ok(public) = peer::discover_public_address(&socket).await {
+            if !addrs.contains(&public) {
+                addrs.push(public);
+            }
+        }
+        let pair = crypto::generate_key_pair();
+        let pairing = crypto::generate_pairing_key();
+        let code = crypto::encode_zero_code(&pair.public, &pairing, &addrs, now_ms())?;
+        let (peer, events) = Peer::new(pair, pairing, None).await?;
+        Ok((code, peer, events, socket))
+    }
+
     #[tauri::command]
     pub async fn zl_host_start(
         tab_id: Option<String>,
@@ -108,24 +172,7 @@ mod service {
     ) -> Result<HostStart, String> {
         let _ = tab_id;
         stop_host(&state).await;
-        let socket = peer::bind_signal(peer::SIGNAL_PORT)
-            .await
-            .map_err(|error| error.to_string())?;
-        let port = socket
-            .local_addr()
-            .map_err(|error| error.to_string())?
-            .port();
-        let mut addrs = peer::local_addresses(port);
-        if let Ok(public) = peer::discover_public_address(&socket).await {
-            if !addrs.contains(&public) {
-                addrs.push(public);
-            }
-        }
-        let pair = crypto::generate_key_pair();
-        let pairing = crypto::generate_pairing_key();
-        let code = crypto::encode_zero_code(&pair.public, &pairing, &addrs, now_ms())
-            .map_err(|error| error.to_string())?;
-        let (peer, events) = Peer::new(pair, pairing, None)
+        let (code, peer, events, socket) = prepare_host(false)
             .await
             .map_err(|error| error.to_string())?;
         let (cancel, cancelled) = oneshot::channel();
@@ -157,7 +204,7 @@ mod service {
         socket: Arc<tokio::net::UdpSocket>,
         mut cancelled: oneshot::Receiver<()>,
     ) -> anyhow::Result<()> {
-        let mut buffer = vec![0_u8; 2048];
+        let mut buffer = vec![0_u8; peer::SAFE_DATAGRAM_BYTES];
         let mut offer: Option<
             webrtc::peer_connection::sdp::session_description::RTCSessionDescription,
         > = None;
@@ -241,6 +288,118 @@ mod service {
         Ok(())
     }
 
+    pub async fn start_headless_host() -> anyhow::Result<HeadlessHost> {
+        let (code, peer, events, socket) = prepare_host(true).await?;
+        let (cancel, cancelled) = oneshot::channel();
+        let task = tokio::spawn(run_headless_host(
+            PtyState::default(),
+            peer,
+            events,
+            socket,
+            cancelled,
+        ));
+        Ok(HeadlessHost {
+            code,
+            cancel: Some(cancel),
+            task: Some(task),
+        })
+    }
+
+    async fn run_headless_host(
+        pty: PtyState,
+        peer: Peer,
+        mut events: mpsc::UnboundedReceiver<PeerEvent>,
+        socket: Arc<tokio::net::UdpSocket>,
+        mut cancelled: oneshot::Receiver<()>,
+    ) -> anyhow::Result<()> {
+        let mut buffer = vec![0_u8; peer::SAFE_DATAGRAM_BYTES];
+        let mut offer = None;
+        let mut answered = false;
+        let mut connected = false;
+        let (async_tx, mut async_rx) = mpsc::channel(8);
+        let session_id = format!("zerolink-e2e-{}", rand::random::<u32>());
+        loop {
+            tokio::select! {
+                _ = &mut cancelled => break,
+                received = socket.recv_from(&mut buffer) => {
+                    let (length, source) = received?;
+                    let Ok(signal) = peer::decode_signal(&buffer[..length]) else { continue };
+                    match signal.kind.as_str() {
+                        "hello" if !connected => {
+                            if offer.is_none() {
+                                offer = Some(peer.make_offer().await?);
+                            }
+                            if let Some(description) = &offer {
+                                peer::send_signal(&socket, source, &Signal {
+                                    kind: "offer".into(),
+                                    sdp: description.sdp.clone(),
+                                    sdp_type: "offer".into(),
+                                }).await?;
+                            }
+                        }
+                        "answer" if !answered => {
+                            ensure!(signal.sdp_type == "answer", "invalid SDP answer type");
+                            answered = true;
+                            peer.accept_answer(&signal.sdp).await?;
+                        }
+                        _ => {}
+                    }
+                }
+                Some(event) = events.recv() => match event {
+                    PeerEvent::Connected if !connected => {
+                        connected = true;
+                        eprintln!("ZeroLink host: encrypted client connected");
+                        pty.spawn_zerolink(
+                            session_id.clone(),
+                            100,
+                            30,
+                            Arc::new(TunnelOutput { sender: async_tx.clone() }),
+                            Arc::new(TunnelExit { sender: async_tx.clone() }),
+                        ).map_err(anyhow::Error::msg)?;
+                    }
+                    PeerEvent::Data(frame) => {
+                        handle_terminal_frame(&pty, &session_id, &frame)?;
+                    }
+                    PeerEvent::Error(message) => return Err(anyhow::anyhow!(message)),
+                    PeerEvent::Disconnected => break,
+                    PeerEvent::Connected => {}
+                },
+                Some(event) = async_rx.recv() => match event {
+                    HostAsync::Frame(frame) => peer.send(frame).await?,
+                    HostAsync::Exit(code) => {
+                        peer.send(proto::frame(proto::EXIT, proto::encode_exit(code))).await?
+                    }
+                    HostAsync::ForwardWriter(_, _) => {}
+                }
+            }
+        }
+        pty.kill_zerolink(&session_id);
+        peer.close().await;
+        Ok(())
+    }
+
+    fn handle_terminal_frame(
+        pty: &PtyState,
+        session_id: &str,
+        frame: &[u8],
+    ) -> anyhow::Result<bool> {
+        let (kind, payload) = proto::parse_frame(frame)?;
+        match kind {
+            proto::DATA => {
+                pty.write_zerolink(session_id, payload)
+                    .map_err(anyhow::Error::msg)?;
+                Ok(true)
+            }
+            proto::RESIZE => {
+                let (cols, rows) = proto::decode_resize(payload)?;
+                pty.resize_zerolink(session_id, cols, rows)
+                    .map_err(anyhow::Error::msg)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn handle_host_frame(
         app: &AppHandle,
@@ -252,16 +411,11 @@ mod service {
         writers: &mut HashMap<u32, tokio::net::tcp::OwnedWriteHalf>,
         frame: Vec<u8>,
     ) -> anyhow::Result<()> {
+        if handle_terminal_frame(pty, session_id, &frame)? {
+            return Ok(());
+        }
         let (kind, payload) = proto::parse_frame(&frame)?;
         match kind {
-            proto::DATA => pty
-                .write_zerolink(session_id, payload)
-                .map_err(anyhow::Error::msg)?,
-            proto::RESIZE => {
-                let (cols, rows) = proto::decode_resize(payload)?;
-                pty.resize_zerolink(session_id, cols, rows)
-                    .map_err(anyhow::Error::msg)?;
-            }
             proto::EXEC => {
                 let command = String::from_utf8(payload.to_vec())?;
                 let peer = peer.clone();
@@ -393,22 +547,7 @@ mod service {
         state: State<'_, ZeroLinkState>,
     ) -> Result<(), String> {
         stop_client(&state).await;
-        let decoded =
-            crypto::decode_zero_code(&code, now_ms()).map_err(|error| error.to_string())?;
-        if decoded.addrs.is_empty() {
-            return Err("code contains no usable address".into());
-        }
-        let destinations = decoded
-            .addrs
-            .iter()
-            .map(|value| value.parse::<SocketAddr>())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let socket = peer::bind_signal(0)
-            .await
-            .map_err(|error| error.to_string())?;
-        let pair = crypto::generate_key_pair();
-        let (peer, events) = Peer::new(pair, decoded.pairing_key, Some(decoded.public_key))
+        let (peer, events, socket, destinations) = prepare_client(&code)
             .await
             .map_err(|error| error.to_string())?;
         let (commands, receiver) = mpsc::unbounded_channel();
@@ -432,6 +571,113 @@ mod service {
         Ok(())
     }
 
+    async fn prepare_client(
+        code: &str,
+    ) -> anyhow::Result<(
+        Peer,
+        mpsc::UnboundedReceiver<PeerEvent>,
+        Arc<tokio::net::UdpSocket>,
+        Vec<SocketAddr>,
+    )> {
+        let decoded = crypto::decode_zero_code(code, now_ms())?;
+        if decoded.addrs.is_empty() {
+            anyhow::bail!("code contains no usable address");
+        }
+        let destinations = decoded
+            .addrs
+            .iter()
+            .map(|value| value.parse::<SocketAddr>())
+            .collect::<Result<Vec<_>, _>>()?;
+        let socket = peer::bind_signal(0).await?;
+        let pair = crypto::generate_key_pair();
+        let (peer, events) = Peer::new(pair, decoded.pairing_key, Some(decoded.public_key)).await?;
+        Ok((peer, events, socket, destinations))
+    }
+
+    pub async fn headless_connect(
+        code: &str,
+        input: &[u8],
+        marker: &[u8],
+        duration: Duration,
+    ) -> anyhow::Result<()> {
+        let (peer, mut events, socket, destinations) = prepare_client(code).await?;
+        let operation = async {
+            let mut buffer = vec![0_u8; peer::SAFE_DATAGRAM_BYTES];
+            let mut hello = interval(Duration::from_millis(1500));
+            let deadline = tokio::time::sleep(duration);
+            tokio::pin!(deadline);
+            let mut offer_handled = false;
+            let mut connected = false;
+            let mut output = Vec::new();
+            loop {
+                tokio::select! {
+                    _ = &mut deadline => {
+                        let received = String::from_utf8_lossy(&output);
+                        anyhow::bail!("encrypted session timed out; received {received:?}");
+                    }
+                    _ = hello.tick(), if !offer_handled => {
+                        let mut sent = false;
+                        let mut last_error = None;
+                        for destination in &destinations {
+                            match peer::send_signal(&socket, *destination, &Signal {
+                                kind: "hello".into(),
+                                sdp: String::new(),
+                                sdp_type: String::new(),
+                            }).await {
+                                Ok(()) => sent = true,
+                                Err(error) => last_error = Some(error),
+                            }
+                        }
+                        if !sent {
+                            return Err(last_error.unwrap_or_else(|| {
+                                anyhow::anyhow!("code contains no reachable address")
+                            }));
+                        }
+                    }
+                    received = socket.recv_from(&mut buffer), if !offer_handled => {
+                        let Ok((length, source)) = received else { continue };
+                        let Ok(signal) = peer::decode_signal(&buffer[..length]) else { continue };
+                        if signal.kind == "offer" {
+                            ensure!(signal.sdp_type == "offer", "invalid SDP offer type");
+                            offer_handled = true;
+                            let answer = peer.answer_offer(&signal.sdp).await?;
+                            peer::send_signal(&socket, source, &Signal {
+                                kind: "answer".into(),
+                                sdp: answer.sdp,
+                                sdp_type: "answer".into(),
+                            }).await?;
+                        }
+                    }
+                    Some(event) = events.recv() => match event {
+                        PeerEvent::Connected if !connected => {
+                            connected = true;
+                            peer.send(proto::frame(proto::DATA, input)).await?;
+                        }
+                        PeerEvent::Data(frame) => {
+                            let (kind, payload) = proto::parse_frame(&frame)?;
+                            if kind == proto::DATA {
+                                if payload.windows(4).any(|item| item == b"\x1b[6n") {
+                                    peer.send(proto::frame(proto::DATA, b"\x1b[1;1R")).await?;
+                                }
+                                output.extend_from_slice(payload);
+                                if output.windows(marker.len()).filter(|item| *item == marker).count() >= 2 {
+                                    peer.close().await;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        PeerEvent::Error(message) => return Err(anyhow::anyhow!(message)),
+                        PeerEvent::Disconnected => anyhow::bail!("peer disconnected before marker"),
+                        PeerEvent::Connected => {}
+                    }
+                }
+            }
+        };
+        let result = operation.await;
+        peer.close().await;
+        result
+    }
+
     async fn run_client(
         app: AppHandle,
         tab_id: String,
@@ -441,7 +687,7 @@ mod service {
         destinations: Vec<SocketAddr>,
         mut commands: mpsc::UnboundedReceiver<ClientCommand>,
     ) -> anyhow::Result<()> {
-        let mut buffer = vec![0_u8; 2048];
+        let mut buffer = vec![0_u8; peer::SAFE_DATAGRAM_BYTES];
         let mut hello = interval(Duration::from_millis(1500));
         let deadline = tokio::time::sleep(CONNECT_TIMEOUT);
         tokio::pin!(deadline);

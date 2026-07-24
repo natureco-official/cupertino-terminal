@@ -5,6 +5,9 @@ mod pty;
 mod zerolink;
 
 #[cfg(not(test))]
+pub use zerolink::{headless_connect, start_headless_host, HeadlessHost};
+
+#[cfg(not(test))]
 mod app {
     use super::{
         account::{AccountEmail, AccountError, AccountService, AccountStatus},

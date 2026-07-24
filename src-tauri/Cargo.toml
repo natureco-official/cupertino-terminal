@@ -9,6 +9,10 @@ edition = "2021"
 name = "cupertino_terminal_lib"
 crate-type = ["rlib"]
 
+[[bin]]
+name = "zl-e2e"
+path = "src/bin/zl-e2e.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
