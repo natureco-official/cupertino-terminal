@@ -820,6 +820,21 @@ async function splitActive(direction = 'vertical', options = {}) {
 }
 document.getElementById('btn-new-tab').addEventListener('click', () => createTabAtActiveCwd());
 document.getElementById('btn-settings').addEventListener('click', () => toggleSettings());
+// Titlebar dragging under Tauri: WKWebView ignores -webkit-app-region and the drag-region attribute
+// is flaky with a transparent window, so start the native window drag explicitly on mousedown over
+// an empty part of the titlebar (never over a control), and double-click to zoom (macOS convention).
+if (isTauri) {
+  const titlebarEl = document.getElementById('titlebar');
+  const onControl = (target) => target.closest('button, .tl, input, a, select, [role="button"]');
+  titlebarEl?.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || onControl(e.target)) return;
+    window.termAPI.startDragging?.();
+  });
+  titlebarEl?.addEventListener('dblclick', (e) => {
+    if (onControl(e.target)) return;
+    window.termAPI.maximize?.();
+  });
+}
 window.termAPI.onOpenDirectory((cwd) => createTab('default', cwd));
 window.termAPI.onNewTab(() => createTabAtActiveCwd());
 window.termAPI.onCloseTab(() => { if (activeTabId) closeTab(activeTabId); });
@@ -1046,11 +1061,13 @@ async function createTab(profileKey = 'default', cwd = null) {
       if (e.altKey && e.key === 'ArrowRight') { focusOtherPane(); return false; }
       if (k === 'f' && !e.shiftKey) { openSearch(); return false; }
       // Yeni / kapat sekme
-      if (k === 't' && !e.shiftKey) { createTabAtActiveCwd(); return false; }
-      if (k === 'w' && !e.shiftKey) { if (activeTabId) closeTab(activeTabId); return false; }
+      // On macOS the native menu owns Cmd+T / Cmd+W / Cmd+, — don't also act here
+      // (that double-fired: menu -> app:new-tab AND this handler both created a tab).
+      if (k === 't' && !e.shiftKey) { if (!isMac) createTabAtActiveCwd(); return false; }
+      if (k === 'w' && !e.shiftKey) { if (!isMac && activeTabId) closeTab(activeTabId); return false; }
 
-      // Ayarlar: Ctrl+, (macOS Cmd+, muadili)
-      if (k === ',') { toggleSettings(); return false; }
+      // Ayarlar: Ctrl+, (macOS'ta native menü sahiplenir → burada tekrar açma)
+      if (k === ',') { if (!isMac) toggleSettings(); return false; }
 
       // macOS uses Cmd+C only for a selection; Ctrl+C always reaches the PTY.
       // Windows/Linux retain copy-when-selected, otherwise SIGINT.
@@ -1481,7 +1498,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !commandPaletteOverlayEl.hidden) { closeCommandPalette(); return; }
   if (e.key === 'Escape' && !overlayEl.hidden) { closeSettings(); return; }
   if (e.key === 'Escape' && !zlOverlayEl.hidden) { closeZeroLink(); return; }
-  if (!fromTerminal && appModifier(e, isMac) && e.key === ',') {
+  if (!fromTerminal && !isMac && appModifier(e, isMac) && e.key === ',') {
     e.preventDefault();
     toggleSettings();
   }

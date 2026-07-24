@@ -163,6 +163,9 @@ async function installUpdate() {
 window.termAPI = Object.freeze({
   minimize: () => appWindow.minimize(),
   maximize: () => appWindow.toggleMaximize(),
+  // WKWebView ignores CSS -webkit-app-region, and data-tauri-drag-region is unreliable with a
+  // transparent/vibrancy window, so the renderer drives titlebar dragging explicitly.
+  startDragging: () => appWindow.startDragging(),
   close: () => {
     if (closeRequested.size) {
       for (const callback of closeRequested) callback();
